@@ -65,12 +65,12 @@ SK_ImGui_NV_DepthBoundsD3D11 (void)
 
   bool changed = false;
 
-  changed |= ImGui::Checkbox ("Enable Depth Bounds Test", &enable);
+  changed |= ImGui::Checkbox (u8"启用深度边界测试", &enable);
 
   if (enable)
   {
-    changed |= ImGui::SliderFloat ("fMinDepth", &fMin, 0.0f, fMax);
-    changed |= ImGui::SliderFloat ("fMaxDepth", &fMax, fMin, 1.0f);
+    changed |= ImGui::SliderFloat (u8"fMinDepth", &fMin, 0.0f, fMax);
+    changed |= ImGui::SliderFloat (u8"fMaxDepth", &fMax, fMin, 1.0f);
   }
 
   if (changed)
@@ -171,10 +171,10 @@ SK_ImGui_DrawTexCache_Chart (void)
     {
       ImGui::Separator ();
 
-      ImGui::Checkbox ("Measure residency", &config.textures.cache.residency_managemnt);
+      ImGui::Checkbox (u8"Measure residency", &config.textures.cache.residency_managemnt);
 
       ImGui::SameLine ();
-      ImGui::Checkbox ("Vibrate on cache miss", &config.textures.cache.vibrate_on_miss);
+      ImGui::Checkbox (u8"Vibrate on cache miss", &config.textures.cache.vibrate_on_miss);
 
       if (config.textures.cache.residency_managemnt)
       {
@@ -255,20 +255,20 @@ SK::ControlPanel::D3D11::Draw (void)
     (SK_GL_OnD3D11);
 
   if (                                 (d3d11 &&
-       ImGui::CollapsingHeader ("Direct3D 11 Settings", ImGuiTreeNodeFlags_DefaultOpen)) ||
+       ImGui::CollapsingHeader (u8"Direct3D 11 选项", ImGuiTreeNodeFlags_DefaultOpen)) ||
                                        (d3d12 &&
-       ImGui::CollapsingHeader ("Direct3D 12 Settings", ImGuiTreeNodeFlags_DefaultOpen)) )
+       ImGui::CollapsingHeader (u8"Direct3D 12 选项", ImGuiTreeNodeFlags_DefaultOpen)) )
   {
     if (d3d11 && (! indirect))
     {
       ImGui::SameLine ();
-      ImGui::TextUnformatted ("     State Tracking:  ");
+      ImGui::TextUnformatted (u8"    状态跟踪:  ");
 
       ImGui::PushStyleColor (ImGuiCol_Text, (ImVec4&&)ImColor::HSV (0.173f, 0.428f, 0.96f));
       ImGui::SameLine ();
 
       if (SK_D3D11_EnableTracking)
-        ImGui::TextUnformatted ("( ALL State/Ops --> [Mod Tools Window Active] )");
+        ImGui::TextUnformatted (u8"( ALL State/Ops --> [MOD工具 窗口激活] )");
 
       else
       {
@@ -324,7 +324,7 @@ SK::ControlPanel::D3D11::Draw (void)
 
       #pragma region "Advanced"
       if ( //config.system.log_level > 0
-           false//ImGui::TreeNode ("Recently Used Shaders")
+           false//ImGui::TreeNode (u8"Recently Used Shaders")
          )
       {
         static auto constexpr _RECENT_USE_THRESHOLD = 30;
@@ -363,7 +363,7 @@ SK::ControlPanel::D3D11::Draw (void)
           );
         }
 
-        std::string name (" ", MAX_PATH + 1);
+        std::string name (u8" ", MAX_PATH + 1);
 
         ImGui::BeginGroup ();
         for ( const auto &[bucket, dump] : shaders )
@@ -383,7 +383,7 @@ SK::ControlPanel::D3D11::Draw (void)
           auto range =
             shaders.equal_range (bucket);
 
-          if (ImGui::Checkbox (" Pixel::", &enable))
+          if (ImGui::Checkbox (u8" 像素::", &enable))
           {
             disable =
               (! enable);
@@ -444,7 +444,7 @@ SK::ControlPanel::D3D11::Draw (void)
         //  
         //  ImGui::PushID ((int)(intptr_t)ps);
         //
-        //  if (ImGui::InputText (SK_FormatString ("  %08x", ps).c_str (),
+        //  if (ImGui::InputText (SK_FormatString (u8"  %08x", ps).c_str (),
         //                                                  name.data  (), MAX_PATH))
         //    SK_D3D12_SetDebugName (ps, SK_UTF8ToWideChar (name));
         //
@@ -477,7 +477,7 @@ SK::ControlPanel::D3D11::Draw (void)
 
           ImGui::PushID ((int)(intptr_t)ps);
 
-          if (ImGui::Checkbox (" Other::", &enable))
+          if (ImGui::Checkbox (u8" 其它::", &enable))
           {
             disable =
               (! enable);
@@ -529,16 +529,16 @@ SK::ControlPanel::D3D11::Draw (void)
     ImGui::PushStyleColor (ImGuiCol_Header,        ImVec4 (0.90f, 0.68f, 0.02f, 0.45f));
     ImGui::PushStyleColor (ImGuiCol_HeaderHovered, ImVec4 (0.90f, 0.72f, 0.07f, 0.80f));
     ImGui::PushStyleColor (ImGuiCol_HeaderActive,  ImVec4 (0.87f, 0.78f, 0.14f, 0.80f));
-    ImGui::TreePush       ("");
+    ImGui::TreePush       (u8"");
 
     const bool swapchain =
-      ImGui::CollapsingHeader ("SwapChain Management");
+      ImGui::CollapsingHeader (u8"SwapChain 管理器");
 
     if (ImGui::IsItemHovered ())
     {
       ImGui::BeginTooltip   ();
       ImGui::TextColored    ( ImColor (235, 235, 235),
-                              "Latency and Framepacing Tweaks" );
+                              u8"延迟和帧调整" );
       ImGui::EndTooltip     ();
     }
 
@@ -561,24 +561,24 @@ SK::ControlPanel::D3D11::Draw (void)
       static int  buffer_count = config.render.framerate.buffer_count;
       static int  prerender    = config.render.framerate.pre_render_limit;
 
-      ImGui::TreePush ("");
+      ImGui::TreePush (u8"");
 
       ImGui::BeginGroup ();
 
       if (! indirect)
       {
         if (d3d12)
-          ImGui::Checkbox   ("Force Flip Discard in D3D12", &config.render.framerate.flip_discard);
+          ImGui::Checkbox   (u8"强制D3D12中的翻转丢弃", &config.render.framerate.flip_discard);
         else
         {
-          ImGui::Checkbox   ("Use Flip Model Presentation", &config.render.framerate.flip_discard);
+          ImGui::Checkbox   (u8"使用翻转模型演示", &config.render.framerate.flip_discard);
 
           if (ImGui::IsItemHovered ())
           {
             ImGui::BeginTooltip ();
-            ImGui::Text         ("High-Performance Windowed Rendering");
+            ImGui::Text         (u8"高性能窗口渲染");
             ImGui::Separator    ();
-            ImGui::BulletText   ("Makes Windowed Mode Perform Same as Fullscreen Exclusive");
+            ImGui::BulletText   (u8"使窗口模式执行相同的全屏独占");
             ImGui::EndTooltip   ();
           }
         }
@@ -592,7 +592,7 @@ SK::ControlPanel::D3D11::Draw (void)
 
         if (! d3d12)
         {
-          if (ImGui::Checkbox ("Waitable SwapChain", &waitable_))
+          if (ImGui::Checkbox (u8"Waitable SwapChain", &waitable_))
           {
             if (! waitable_) config.render.framerate.swapchain_wait = 0;
             else             config.render.framerate.swapchain_wait = 15;
@@ -621,12 +621,12 @@ SK::ControlPanel::D3D11::Draw (void)
           if (ImGui::IsItemHovered ())
           {
             ImGui::BeginTooltip ();
-            ImGui::Text         ("Reduces Input Latency in SK's Framerate Limiter");
+            ImGui::Text         (u8"Reduces Input Latency in SK's Framerate Limiter");
             if (SK_GetCurrentRenderBackend ().api != SK_RenderAPI::D3D12)
             {
               ImGui::Separator  ();
-              ImGui::BulletText ("Fullscreen Exclusive will not work while enabled");
-              ImGui::BulletText ("Fullscreen Exclusive is obsolete");
+              ImGui::BulletText (u8"全屏独占在启用时将不起作用");
+              ImGui::BulletText (u8"全屏独占已经过时了");
             }
             ImGui::EndTooltip   ();
           }
@@ -635,8 +635,8 @@ SK::ControlPanel::D3D11::Draw (void)
           {
             ImGui::SameLine   ();
             ImGui::BeginGroup ();
-            ImGui::InputFloat ("SwapWaitFract", &fSwapWaitFract);
-            ImGui::InputFloat ("SwapWaitRatio", &fSwapWaitRatio);
+            ImGui::InputFloat (u8"SwapWaitFract", &fSwapWaitFract);
+            ImGui::InputFloat (u8"SwapWaitRatio", &fSwapWaitRatio);
             ImGui::EndGroup   ();
           }
         }
@@ -644,7 +644,7 @@ SK::ControlPanel::D3D11::Draw (void)
         if (SK_DXGI_SupportsTearing ())
         {
           bool tearing_pref = config.render.dxgi.allow_tearing;
-          if (ImGui::Checkbox ("Enable Tearing", &tearing_pref))
+          if (ImGui::Checkbox (u8"启用撕裂", &tearing_pref))
           {
             config.render.dxgi.allow_tearing = tearing_pref;
 
@@ -654,7 +654,7 @@ SK::ControlPanel::D3D11::Draw (void)
           if (ImGui::IsItemHovered ())
           {
             ImGui::BeginTooltip ();
-            ImGui::Text         ("Enables True VSYNC -OFF- (PresentInterval = 0) in Windowed Mode");
+            ImGui::Text         (u8"Enables True VSYNC -OFF- (PresentInterval = 0) in Windowed Mode");
             ImGui::EndTooltip   ();
           }
         }
@@ -678,20 +678,20 @@ SK::ControlPanel::D3D11::Draw (void)
       ImGui::BeginGroup ();
       ImGui::PushItemWidth (100.0f * ui_scale);
 
-      ImGui::InputInt ("Presentation Interval",       &config.render.framerate.present_interval);
+      ImGui::InputInt (u8"演示间隔",       &config.render.framerate.present_interval);
 
       if (ImGui::IsItemHovered ())
       {
         ImGui::BeginTooltip ();
 
-        ImGui::Text       ("This Controls V-Sync");
+        ImGui::Text       (u8"控制V-Sync");
         ImGui::Separator  (                                               );
-        ImGui::BulletText ("-1=Game Controlled,  0=Force Off,  1=Force On");
+        ImGui::BulletText (u8"-1=游戏控制,  0=强制关闭,  1=强制开启");
 
         if (config.render.framerate.drop_late_flips && config.render.framerate.present_interval != 0)
-          ImGui::BulletText ("Values > 1 do not Apply unless \"Drop Late Frames\" or SK's Framerate Limiter are Disabled");
+          ImGui::BulletText (u8"Values > 1 除非禁用了Drop Late Frames或SK的帧速率限制器，否则不要应用");
         else
-          ImGui::BulletText (">1=Fractional Refresh Rates");
+          ImGui::BulletText (u8">1=部分刷新率");
 
         ImGui::EndTooltip ();
       }
@@ -701,7 +701,7 @@ SK::ControlPanel::D3D11::Draw (void)
 
       if (! d3d12)
       {
-        if (ImGui::InputInt ("BackBuffer Count", &config.render.framerate.buffer_count))
+        if (ImGui::InputInt (u8"BackBuffer计数", &config.render.framerate.buffer_count))
         {
           auto& io =
             ImGui::GetIO ();
@@ -728,7 +728,7 @@ SK::ControlPanel::D3D11::Draw (void)
 
       if (! d3d12)
       {
-        if (ImGui::InputInt ("Maximum Device Latency", &config.render.framerate.pre_render_limit))
+        if (ImGui::InputInt (u8"最大设备延迟", &config.render.framerate.pre_render_limit))
         {
           if (config.render.framerate.pre_render_limit <  0)
               config.render.framerate.pre_render_limit = -1;
@@ -762,21 +762,21 @@ SK::ControlPanel::D3D11::Draw (void)
       if (changed)
       {
         ImGui::PushStyleColor (ImGuiCol_Text, (ImVec4&&)ImColor::HSV (.3f, .8f, .9f));
-        ImGui::BulletText     ("Game Restart Required");
+        ImGui::BulletText     (u8"需要重新启动游戏");
         ImGui::PopStyleColor  ();
       }
       ImGui::TreePop  ();
     }
 
-    if (d3d11 && (! indirect) && ImGui::CollapsingHeader ("Texture Management"))
+    if (d3d11 && (! indirect) && ImGui::CollapsingHeader (u8"纹理管理"))
     {
-      ImGui::TreePush ("");
-      ImGui::Checkbox ("Enable Texture Caching", &config.textures.d3d11.cache);
+      ImGui::TreePush (u8"");
+      ImGui::Checkbox (u8"启用纹理缓存", &config.textures.d3d11.cache);
 
       if (ImGui::IsItemHovered ())
       {
         ImGui::BeginTooltip    ();
-        ImGui::TextUnformatted ("Reduces Driver Memory Management Overhead in Games that Stream Textures");
+        ImGui::TextUnformatted (u8"减少流式纹理游戏中的驱动程序内存管理开销");
 
         static bool orig_cache = config.textures.d3d11.cache;
 
@@ -787,7 +787,7 @@ SK::ControlPanel::D3D11::Draw (void)
           LONG erase_    = 0L;
           LONG index_    = 0L;
 
-          std::pair <int, std::pair <LONG, std::pair <LONG, char*>>> busiest = { 0, { 0, { 0, "Invalid" } } };
+          std::pair <int, std::pair <LONG, std::pair <LONG, char*>>> busiest = { 0, { 0, { 0, u8"无效的" } } };
 
           int idx = 0;
 
@@ -853,14 +853,14 @@ SK::ControlPanel::D3D11::Draw (void)
             int lod = 0;
             for ( auto it : SK_D3D11_Textures.HashMap_2D )
             {
-              ImGui::BulletText ("LOD %02lu Load Factor: ", lod++);
+              ImGui::BulletText (u8"LOD %02lu Load Factor: ", lod++);
             }
             ImGui::EndGroup   (                                 );
             ImGui::SameLine   (                                 );
             ImGui::BeginGroup (                                 );
             for ( auto it : SK_D3D11_Textures.HashMap_2D )
             {
-              ImGui::Text     (" %.2f", it.entries.load_factor());
+              ImGui::Text     (u8" %.2f", it.entries.load_factor());
             }
             ImGui::EndGroup   (                                 );
           }
@@ -869,13 +869,13 @@ SK::ControlPanel::D3D11::Draw (void)
         else
         {
           ImGui::Separator  (                                   );
-          ImGui::BulletText ( "Requires Application Restart"    );
+          ImGui::BulletText ( u8"需要重新启动应用程序"    );
         }
         ImGui::EndTooltip   (                                   );
       }
 
       //ImGui::PushStyleColor (ImGuiCol_Text, ImVec4 (1.0f, 0.85f, 0.1f, 0.9f));
-      //ImGui::SameLine (); ImGui::BulletText ("Requires restart");
+      //ImGui::SameLine (); ImGui::BulletText (u8"Requires restart");
       //ImGui::PopStyleColor  ();
 
       if (config.textures.d3d11.cache && (! indirect))
@@ -884,22 +884,22 @@ SK::ControlPanel::D3D11::Draw (void)
         ImGui::Spacing  ();
         ImGui::SameLine ();
 
-        ImGui::Checkbox ("Ignore Textures Without Mipmaps", &config.textures.cache.ignore_nonmipped);
+        ImGui::Checkbox (u8"忽略没有Mipmap的纹理", &config.textures.cache.ignore_nonmipped);
 
         if (ImGui::IsItemHovered ())
-          ImGui::SetTooltip ("Important Compatibility Setting for Some Games (e.g. The Witcher 3)");
+          ImGui::SetTooltip (u8"某些游戏的重要兼容性设置（例如《巫师3》）");
 
         ImGui::SameLine ();
 
-        ImGui::Checkbox ("Cache Staged Texture Uploads", &config.textures.cache.allow_staging);
+        ImGui::Checkbox (u8"缓存分段纹理上传", &config.textures.cache.allow_staging);
 
         if (ImGui::IsItemHovered ())
         {
           ImGui::BeginTooltip ();
-          ImGui::Text         ("Enable Texture Dumping and Injection in Unity-based Games");
+          ImGui::Text         (u8"在基于Unity的游戏中启用纹理转储和注入");
           ImGui::Separator    ();
-          ImGui::BulletText   ("May cause degraded performance.");
-          ImGui::BulletText   ("Try to leave this off unless textures are missing from the mod tools.");
+          ImGui::BulletText   (u8"可能导致性能下降.");
+          ImGui::BulletText   (u8"除非mod工具中缺少纹理，否则请尝试关闭此选项.");
           ImGui::EndTooltip   ();
         }
       }
@@ -913,22 +913,22 @@ SK::ControlPanel::D3D11::Draw (void)
                                                config.render.dxgi.res.max.isZero () );
 
     const bool res_limits =
-      ImGui::CollapsingHeader ("Resolution Limiting", enable_resolution_limits ? ImGuiTreeNodeFlags_DefaultOpen : 0x00);
+      ImGui::CollapsingHeader (u8"分辨率限制", enable_resolution_limits ? ImGuiTreeNodeFlags_DefaultOpen : 0x00);
 
     if (ImGui::IsItemHovered ())
     {
       ImGui::BeginTooltip ();
-      ImGui::Text         ("Restrict the lowest/highest resolutions reported to a game");
+      ImGui::Text         (u8"限制向游戏报告的最低/最高分辨率");
       ImGui::Separator    ();
-      ImGui::BulletText   ("Useful for games that compute aspect ratio based on the highest reported resolution.");
+      ImGui::BulletText   (u8"适用于基于报告的最高分辨率计算纵横比的游戏.");
       ImGui::EndTooltip   ();
     }
 
     if (res_limits)
     {
-      ImGui::TreePush  ("");
-      ImGui::InputInt2 ("Minimum Resolution", reinterpret_cast <int *> (&config.render.dxgi.res.min.x));
-      ImGui::InputInt2 ("Maximum Resolution", reinterpret_cast <int *> (&config.render.dxgi.res.max.x));
+      ImGui::TreePush  (u8"");
+      ImGui::InputInt2 (u8"最小分辨率", reinterpret_cast <int *> (&config.render.dxgi.res.min.x));
+      ImGui::InputInt2 (u8"最大分辨率", reinterpret_cast <int *> (&config.render.dxgi.res.max.x));
 
       // Fix for stupid users ... and stupid programmers who don't range validate
       //
@@ -943,16 +943,16 @@ SK::ControlPanel::D3D11::Draw (void)
 
     if (d3d11)
     {
-      if ((! indirect) && ImGui::Button (" Render Mod Tools "))
+      if ((! indirect) && ImGui::Button (u8" 渲染Mod工具 "))
       {
         show_shader_mod_dlg = (!show_shader_mod_dlg);
       }
 
       if (! indirect) ImGui::SameLine ();
-      if (! indirect) ImGui::Checkbox ("D3D11 Deferred Mode", &config.render.dxgi.deferred_isolation);
+      if (! indirect) ImGui::Checkbox (u8"D3D11延迟模式", &config.render.dxgi.deferred_isolation);
 
       if (! indirect) if (ImGui::IsItemHovered ())
-        ImGui::SetTooltip ("Try changing this option if textures / shaders are missing from the mod tools.");
+        ImGui::SetTooltip (u8"如果mod工具中缺少纹理/着色器，请尝试更改此选项.");
     }
 
     // This only works when we have wrapped SwapChains
@@ -966,7 +966,7 @@ SK::ControlPanel::D3D11::Draw (void)
     if (d3d11) ImGui::SameLine ();
 
     const bool advanced =
-      d3d11 && ImGui::TreeNode ("Advanced (Debug)###Advanced_D3D11");
+      d3d11 && ImGui::TreeNode (u8"高级 (Debug)###Advanced_D3D11");
 
     if (advanced)
     {
@@ -977,10 +977,10 @@ SK::ControlPanel::D3D11::Draw (void)
       if (! indirect)
       {
 #ifdef _SUPPORT_ENHANCED_DEPTH
-        ImGui::Checkbox ("Enhanced (64-bit) Depth+Stencil Buffer", &config.render.dxgi.enhanced_depth);
+        ImGui::Checkbox (u8"Enhanced (64-bit) Depth+Stencil Buffer", &config.render.dxgi.enhanced_depth);
 
         if (ImGui::IsItemHovered ())
-          ImGui::SetTooltip ("Requires application restart");
+          ImGui::SetTooltip (u8"Requires application restart");
 #endif
 
         if (sk::NVAPI::nv_hardware)
@@ -992,7 +992,7 @@ SK::ControlPanel::D3D11::Draw (void)
         }
       }
 
-      ImGui::Checkbox ( "Enable D3D11 Debug Layer",
+      ImGui::Checkbox ( u8"启用D3D11调试层",
                   &config.render.dxgi.debug_layer );
       
       if (config.render.dxgi.debug_layer)
@@ -1009,14 +1009,14 @@ SK::ControlPanel::D3D11::Draw (void)
           ImGui::SameLine ();
 
           if (
-            ImGui::Button ( _pauseDebugOutput ? "Resume Output"
-                                              : "Pause Output" )
+            ImGui::Button ( _pauseDebugOutput ? u8"恢复输出"
+                                              : u8"暂停输出" )
              ) _pauseDebugOutput = !_pauseDebugOutput;
 
           ImGui::SameLine ();
           
           bool bClearLog =
-            ImGui::Button ("Clear Log");
+            ImGui::Button (u8"清除日志");
 
           ImGui::BeginChild (
             ImGui::GetID ("D3D11_Debug_Panel"),
@@ -1100,7 +1100,7 @@ SK::ControlPanel::D3D11::Draw (void)
 
             if (ImGui::BeginPopup ("D3D11_Debug_MessageMenu"))
             {
-              ImGui::Text ("Debug Message Configuration");
+              ImGui::Text (u8"调试消息配置");
 
               ImGui::TreePush   ();
 
@@ -1110,7 +1110,7 @@ SK::ControlPanel::D3D11::Draw (void)
               bool break_ =
                 std::find (break_ids.begin (), break_ids.end (), _debug_id) != break_ids.end ();
 
-              if (ImGui::Checkbox ("Mute this message", &deny))
+              if (ImGui::Checkbox (u8"将此消息静音", &deny))
               {
                 auto& sec =
                   debug_ini->get_section (L"Messages.Filter");
@@ -1175,7 +1175,7 @@ SK::ControlPanel::D3D11::Draw (void)
                 pInfoQueueD3D11->AddStorageFilterEntries   (&filter);
               }
 
-              if (ImGui::Checkbox ("Break on this message", &break_))
+              if (ImGui::Checkbox (u8"中断此消息", &break_))
               {
                 auto& sec =
                   debug_ini->get_section (L"Messages.Break");
@@ -1463,7 +1463,7 @@ SK::ControlPanel::D3D11::Draw (void)
               else if (ImGui::IsItemHovered ())
               {
                 ImGui::BeginTooltip ();
-                ImGui::Text         ("Message ID: %d", message_id);
+                ImGui::Text         (u8"消息 ID: %d", message_id);
                 ImGui::Separator    ();
                    _DrawMessageText ();
                 ImGui::EndTooltip   ();
@@ -1476,7 +1476,7 @@ SK::ControlPanel::D3D11::Draw (void)
 
         else
         {
-          ImGui::BulletText ("Game Restart Required");
+          ImGui::BulletText (u8"需要重新启动游戏");
         }
       }
     }
@@ -1526,30 +1526,30 @@ SK_ImGui_SummarizeDXGISwapchain (IDXGISwapChain* pSwapDXGI)
 
       ImGui::BeginTooltip      ();
       ImGui::PushStyleColor    (ImGuiCol_Text, ImVec4 (0.95f, 0.95f, 0.45f, 1.0f));
-      ImGui::TextUnformatted   ("Framebuffer and Presentation Setup");
+      ImGui::TextUnformatted   (u8"帧缓冲区和演示文稿设置");
       ImGui::PopStyleColor     ();
       ImGui::Separator         ();
 
       ImGui::BeginGroup        ();
       ImGui::PushStyleColor    (ImGuiCol_Text, ImVec4 (0.685f, 0.685f, 0.685f, 1.0f));
-      ImGui::TextUnformatted   ("Color:");
-    //ImGui::TextUnformatted   ("Depth/Stencil:");
-      ImGui::TextUnformatted   ("Resolution:");
-      ImGui::TextUnformatted   ("Back Buffers:");
+      ImGui::TextUnformatted   (u8"颜色:");
+    //ImGui::TextUnformatted   (u8"Depth/Stencil:");
+      ImGui::TextUnformatted   (u8"分辨率:");
+      ImGui::TextUnformatted   (u8"后缓冲区:");
       if ((! fullscreen_desc.Windowed) && fullscreen_desc.Scaling          != DXGI_MODE_SCALING_UNSPECIFIED)
-        ImGui::TextUnformatted ("Scaling Mode:");
+        ImGui::TextUnformatted (u8"缩放模式:");
       if ((! fullscreen_desc.Windowed) && fullscreen_desc.ScanlineOrdering != DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED)
-        ImGui::TextUnformatted ("Scanlines:");
+        ImGui::TextUnformatted (u8"扫描行:");
       if ((! fullscreen_desc.Windowed) && fullscreen_desc.RefreshRate.Denominator != 0)
-        ImGui::TextUnformatted ("Refresh Rate:");
-      ImGui::TextUnformatted   ("Swap Interval:");
-      ImGui::TextUnformatted   ("Swap Effect:");
+        ImGui::TextUnformatted (u8"刷新率:");
+      ImGui::TextUnformatted   (u8"交换间隔:");
+      ImGui::TextUnformatted   (u8"交换效果:");
       if  (swap_desc.SampleDesc.Count > 1 || uiOriginalBltSampleCount > 1)
-        ImGui::TextUnformatted ("MSAA Samples:");
+        ImGui::TextUnformatted (u8"MSAA Samples:");
       if (swap_desc.Flags != 0)
       {
-        ImGui::TextUnformatted ("Flags:");
-        if (swap_flag_count > 1) { for ( int i = 1; i < swap_flag_count; i++ ) ImGui::TextUnformatted ("\n"); }
+        ImGui::TextUnformatted (u8"标志:");
+        if (swap_flag_count > 1) { for ( int i = 1; i < swap_flag_count; i++ ) ImGui::TextUnformatted (u8"\n"); }
       }
       ImGui::PopStyleColor   ();
       ImGui::EndGroup        ();
@@ -1571,7 +1571,7 @@ SK_ImGui_SummarizeDXGISwapchain (IDXGISwapChain* pSwapDXGI)
       if (rb.present_interval == 0)
         ImGui::Text          ("%u: VSYNC OFF",                           rb.present_interval);
       else if (rb.present_interval == 1)
-        ImGui::Text ("%u: Normal V-SYNC", rb.present_interval);
+        ImGui::Text (u8"%u: Normal V-SYNC", rb.present_interval);
       else if (rb.present_interval == 2)
         ImGui::Text          ("%u: 1/2 Refresh V-SYNC",                  rb.present_interval);
       else if (rb.present_interval == 3)
@@ -1593,7 +1593,7 @@ SK_ImGui_SummarizeDXGISwapchain (IDXGISwapChain* pSwapDXGI)
       ImGui::EndGroup        ();
 
       ImGui::PushStyleColor  (ImGuiCol_Text, ImVec4 (0.95f, 0.95f, 0.45f, 1.0f));
-      ImGui::TextUnformatted ("Display Output Configuration");
+      ImGui::TextUnformatted (u8"显示输出配置");
       ImGui::PopStyleColor   ();
       ImGui::Separator       ();
 
@@ -1601,9 +1601,9 @@ SK_ImGui_SummarizeDXGISwapchain (IDXGISwapChain* pSwapDXGI)
       ImGui::PushStyleColor  (ImGuiCol_Text, ImVec4 (0.685f, 0.685f, 0.685f, 1.0f));
       //if (rb.isHDRCapable ())
       {
-        ImGui::Text ("Display Device: ");
-        ImGui::Text ("HDR Color Space: ");
-        ImGui::Text ("Output Bit Depth: ");
+        ImGui::Text (u8"显示设备: ");
+        ImGui::Text (u8"HDR颜色空间: ");
+        ImGui::Text (u8"输出位深度: ");
       }
       ImGui::PopStyleColor   ();
       ImGui::EndGroup        ();
@@ -1655,7 +1655,7 @@ SK_ImGui_SummarizeDXGISwapchain (IDXGISwapChain* pSwapDXGI)
 void
 SK::ControlPanel::D3D11::TextureMenu (SK_TLS *pTLS)
 {
-  if (ImGui::BeginMenu ("Browse Texture Assets"))
+  if (ImGui::BeginMenu (u8"浏览纹理资源"))
   {
     wchar_t wszPath [MAX_PATH + 2] = { };
 
@@ -1674,7 +1674,7 @@ SK::ControlPanel::D3D11::TextureMenu (SK_TLS *pTLS)
                               SK_D3D11_Textures->injectable_texture_bytes, Auto, pTLS
                                                  ).data () );
 
-    if ( ImGui::MenuItem ( "Injectable Textures", inj_view.data (), nullptr ) )
+    if ( ImGui::MenuItem ( u8"可注入纹理", inj_view.data (), nullptr ) )
     {
       wcscpy      (wszPath, SK_D3D11_res_root->c_str ());
       PathAppendW (wszPath, LR"(inject\textures)");
@@ -1688,7 +1688,7 @@ SK::ControlPanel::D3D11::TextureMenu (SK_TLS *pTLS)
                                SK_File_SizeToString (
                                  SK_D3D11_Textures->dumped_texture_bytes, Auto, pTLS
                                                     ).data () );
-       if ( ImGui::MenuItem ( "Dumped Textures", dump_view.data (), nullptr ) )
+       if ( ImGui::MenuItem ( u8"转储的纹理", dump_view.data (), nullptr ) )
        {
          wcscpy      (wszPath, SK_D3D11_res_root->c_str ());
          PathAppendW (wszPath, LR"(dump\textures)");

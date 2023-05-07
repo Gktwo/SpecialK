@@ -353,7 +353,7 @@ public:
         ( szAvg,
             511,
               (const char *)u8"GPU%lu Temp (°C):\n\n\n"
-                            u8"          min: %3.0f°, max: %3.0f°, avg: %4.1f°\n",
+                            u8"          min: %3.0f? max: %3.0f? avg: %4.1f°\n",
                 0,
                   gpu_temp_c.getMin   (), gpu_temp_c.getMax (),
                     gpu_temp_c.getAvg () );
@@ -381,7 +381,7 @@ public:
       ImGui::SameLine      (  );
       ImGui::SetCursorPosX (fx                      + item_inner_spacing.x);
       ImGui::SetCursorPosY (ImGui::GetCursorPosY () + item_inner_spacing.y);
-      ImGui::Text ("%4.1f°", gpu_temp_c.getLastValue ());
+      ImGui::Text ("%4.1f?, gpu_temp_c.getLastValue ()");
       ImGui::SetCursorPosY (fy);
     }
 

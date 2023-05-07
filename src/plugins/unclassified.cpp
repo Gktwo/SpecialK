@@ -531,7 +531,7 @@ SK_FFXV_PlugInCfg (void)
     static auto& shaders =
       SK_D3D11_Shaders.get ();
 
-    if (ImGui::Checkbox ((const char *)u8R"(Ignis Vision ™)", &ignis_vision))
+    if (ImGui::Checkbox ((const char *)u8"(Ignis Vision â„¢)", &ignis_vision))
     {
       if (ignis_vision)
       {
@@ -545,7 +545,7 @@ SK_FFXV_PlugInCfg (void)
 
     ImGui::SameLine ();
 
-    if (ImGui::Checkbox ((const char *)u8R"((No)Hair Club for Men™)", &hair_club))
+    if (ImGui::Checkbox ((const char *)u8"((No)Hair Club for Menâ„¢)", &hair_club))
     {
       if (hair_club)
       {

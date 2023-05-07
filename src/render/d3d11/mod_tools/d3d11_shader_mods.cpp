@@ -176,7 +176,7 @@ SK_D3D11_ShaderModDlg (SK_TLS* pTLS = SK_TLS_Bottom ())
                                         ImVec2 ( io.DisplaySize.x * 0.16f, io.DisplaySize.y * 0.16f ),
                                         ImVec2 ( io.DisplaySize.x * 0.96f, io.DisplaySize.y * 0.96f ) );
 
-  if ( ImGui::Begin ( "D3D11 Render Mod Toolkit###D3D11_RenderDebug",
+  if ( ImGui::Begin ( u8"D3D11 渲染模块工具包###D3D11_RenderDebug",
   //SK_D3D11_MemoryThreads.count_active         (), SK_D3D11_MemoryThreads.count_all   (),
   //  SK_D3D11_ShaderThreads.count_active       (), SK_D3D11_ShaderThreads.count_all   (),
   //    SK_D3D11_DrawThreads.count_active       (), SK_D3D11_DrawThreads.count_all     (),
@@ -197,10 +197,10 @@ SK_D3D11_ShaderModDlg (SK_TLS* pTLS = SK_TLS_Bottom ())
 
     ImGui::Columns (2);
 
-    ImGui::BeginChild ( ImGui::GetID ("Render_Left_Side"), ImVec2 (0,0), false,
+    ImGui::BeginChild ( ImGui::GetID (u8"Render_Left_Side"), ImVec2 (0,0), false,
                           ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NavFlattened );
 
-    if (ImGui::CollapsingHeader ("Live Shader View", ImGuiTreeNodeFlags_DefaultOpen))
+    if (ImGui::CollapsingHeader (u8"实时着色器视图", ImGuiTreeNodeFlags_DefaultOpen))
     {
       SK_D3D11_LiveShaderView (can_scroll);
     }
@@ -226,9 +226,9 @@ SK_D3D11_ShaderModDlg (SK_TLS* pTLS = SK_TLS_Bottom ())
       return szPrettyNumber;
     };
 
-    if (ImGui::CollapsingHeader ("Draw Call Filters", ImGuiTreeNodeFlags_DefaultOpen))
+    if (ImGui::CollapsingHeader (u8"绘制调用筛选器", ImGuiTreeNodeFlags_DefaultOpen))
     {
-      ImGui::TreePush ("");
+      ImGui::TreePush (u8"");
 
       static auto& shaders = SK_D3D11_Shaders;
       static auto& vertex  = shaders->vertex;
@@ -239,12 +239,12 @@ SK_D3D11_ShaderModDlg (SK_TLS* pTLS = SK_TLS_Bottom ())
       static int min_verts_input,
                  max_verts_input;
 
-      ImGui::Text   ("Vertex Shader: %x", tracker->crc32c.load ());
+      ImGui::Text   (u8"顶点着色器: %x", tracker->crc32c.load ());
 
-      bool add_min = ImGui::Button   ("Add Min Filter"); ImGui::SameLine ();
-                     ImGui::InputInt ("Min Verts", &min_verts_input);
-      bool add_max = ImGui::Button   ("Add Max Filter"); ImGui::SameLine ();
-                     ImGui::InputInt ("Max Verts", &max_verts_input);
+      bool add_min = ImGui::Button   (u8"添加最小筛选器"); ImGui::SameLine ();
+                     ImGui::InputInt (u8"最小顶点数", &min_verts_input);
+      bool add_max = ImGui::Button   (u8"添加最大筛选器"); ImGui::SameLine ();
+                     ImGui::InputInt (u8"最大顶点数", &max_verts_input);
 
       ImGui::Separator ();
 
@@ -259,7 +259,7 @@ SK_D3D11_ShaderModDlg (SK_TLS* pTLS = SK_TLS_Bottom ())
              blacklist.second.if_meshes.have.more_than.vertices.first    )
         {
           ImGui::PushID (idx++);
-          if (ImGui::Button ("Remove Filter"))
+          if (ImGui::Button (u8"删除筛选器"))
           {
             blacklist.second.if_meshes.have.less_than.vertices =
               std::make_pair ( false, 0 );
@@ -280,7 +280,7 @@ SK_D3D11_ShaderModDlg (SK_TLS* pTLS = SK_TLS_Bottom ())
         if ( blacklist.second.if_meshes.have.less_than.vertices.first ||
              blacklist.second.if_meshes.have.more_than.vertices.first    )
         {
-          ImGui::Text ("Rule%lu  ", rule_idx++);
+          ImGui::Text (u8"规则%lu  ", rule_idx++);
         }
       }
       ImGui::EndGroup   ();
@@ -291,7 +291,7 @@ SK_D3D11_ShaderModDlg (SK_TLS* pTLS = SK_TLS_Bottom ())
         if ( blacklist.second.if_meshes.have.less_than.vertices.first ||
              blacklist.second.if_meshes.have.more_than.vertices.first    )
         {
-          ImGui::Text ("Vtx Shader: %x  ", blacklist.first);
+          ImGui::Text (u8"Vtx 着色器: %x  ", blacklist.first);
         }
       }
       ImGui::EndGroup   ();
@@ -304,7 +304,7 @@ SK_D3D11_ShaderModDlg (SK_TLS* pTLS = SK_TLS_Bottom ())
         {
           if (blacklist.second.if_meshes.have.less_than.vertices.first)
           {
-            ImGui::Text ("Min. Verts = %lu", blacklist.second.if_meshes.have.less_than.vertices.second);
+            ImGui::Text (u8"Min. Verts = %lu", blacklist.second.if_meshes.have.less_than.vertices.second);
           }
         }
       }
@@ -318,7 +318,7 @@ SK_D3D11_ShaderModDlg (SK_TLS* pTLS = SK_TLS_Bottom ())
         {
           if (blacklist.second.if_meshes.have.more_than.vertices.first)
           {
-            ImGui::Text ("Max. Verts = %lu", blacklist.second.if_meshes.have.more_than.vertices.second);
+            ImGui::Text (u8"Max. Verts = %lu", blacklist.second.if_meshes.have.more_than.vertices.second);
           }
         }
       }
@@ -326,7 +326,7 @@ SK_D3D11_ShaderModDlg (SK_TLS* pTLS = SK_TLS_Bottom ())
       ImGui::TreePop   ();
     }
 
-    if (ImGui::CollapsingHeader ("Live Memory View", ImGuiTreeNodeFlags_DefaultOpen))
+    if (ImGui::CollapsingHeader (u8"实时内存视图", ImGuiTreeNodeFlags_DefaultOpen))
     {
       SK_D3D11_EnableMMIOTracking = true;
       ////std::scoped_lock <SK_Thread_CriticalSection> auto_lock (cs_mmio);
@@ -342,37 +342,37 @@ SK_D3D11_ShaderModDlg (SK_TLS* pTLS = SK_TLS_Bottom ())
       ImGui::TreePush   (""                      );
       ImGui::BeginGroup (                        );
       ImGui::BeginGroup (                        );
-      ImGui::TextColored(ImColor (0.9f, 1.0f, 0.15f, 1.0f), "Mapped Memory"  );
-      ImGui::TreePush   (""                      );
- ImGui::TextUnformatted ("Read-Only:            ");
- ImGui::TextUnformatted ("Write-Only:           ");
- ImGui::TextUnformatted ("Read-Write:           ");
- ImGui::TextUnformatted ("Write (Discard):      ");
- ImGui::TextUnformatted ("Write (No Overwrite): ");
- ImGui::TextUnformatted (""               );
+      ImGui::TextColored(ImColor (0.9f, 1.0f, 0.15f, 1.0f), u8"内存映射"  );
+      ImGui::TreePush   (u8""                      );
+ ImGui::TextUnformatted (u8"只读:            ");
+ ImGui::TextUnformatted (u8"只写:           ");
+ ImGui::TextUnformatted (u8"读写:           ");
+ ImGui::TextUnformatted (u8"写 (Discard):      ");
+ ImGui::TextUnformatted (u8"写 (没有覆盖): ");
+ ImGui::TextUnformatted (u8""               );
       ImGui::TreePop    (                        );
-      ImGui::TextColored(ImColor (0.9f, 1.0f, 0.15f, 1.0f), "Resource Types"  );
-      ImGui::TreePush   (""               );
- ImGui::TextUnformatted ("Unknown:       ");
- ImGui::TextUnformatted ("Buffers:       ");
-      ImGui::TreePush   (""               );
- ImGui::TextUnformatted ("Index:         ");
- ImGui::TextUnformatted ("Vertex:        ");
- ImGui::TextUnformatted ("Constant:      ");
+      ImGui::TextColored(ImColor (0.9f, 1.0f, 0.15f, 1.0f), u8"资源类型"  );
+      ImGui::TreePush   (u8""               );
+ ImGui::TextUnformatted (u8"未知:       ");
+ ImGui::TextUnformatted (u8"缓冲区:       ");
+      ImGui::TreePush   (u8""               );
+ ImGui::TextUnformatted (u8"索引:         ");
+ ImGui::TextUnformatted (u8"顶点:        ");
+ ImGui::TextUnformatted (u8"常数:      ");
       ImGui::TreePop    (                 );
- ImGui::TextUnformatted ("Textures:      ");
-      ImGui::TreePush   (""               );
- ImGui::TextUnformatted ("Textures (1D): ");
- ImGui::TextUnformatted ("Textures (2D): ");
- ImGui::TextUnformatted ("Textures (3D): ");
+ ImGui::TextUnformatted (u8"纹理:      ");
+      ImGui::TreePush   (u8""               );
+ ImGui::TextUnformatted (u8"纹理 (1D): ");
+ ImGui::TextUnformatted (u8"纹理 (2D): ");
+ ImGui::TextUnformatted (u8"纹理 (3D): ");
       ImGui::TreePop    (                 );
- ImGui::TextUnformatted (""               );
+ ImGui::TextUnformatted (u8""               );
       ImGui::TreePop    (                 );
-      ImGui::TextColored(ImColor (0.9f, 1.0f, 0.15f, 1.0f), "Memory Totals"  );
-      ImGui::TreePush   (""               );
- ImGui::TextUnformatted ("Bytes Read:    ");
- ImGui::TextUnformatted ("Bytes Written: ");
- ImGui::TextUnformatted ("Bytes Copied:  ");
+      ImGui::TextColored(ImColor (0.9f, 1.0f, 0.15f, 1.0f), u8"内存总数"  );
+      ImGui::TreePush   (u8""               );
+ ImGui::TextUnformatted (u8"字节读:    ");
+ ImGui::TextUnformatted (u8"字节写: ");
+ ImGui::TextUnformatted (u8"字节复制:  ");
       ImGui::TreePop    (                 );
       ImGui::EndGroup   (                 );
 
@@ -492,7 +492,7 @@ SK_D3D11_ShaderModDlg (SK_TLS* pTLS = SK_TLS_Bottom ())
                                 ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NavFlattened );
 
     uncollapsed_tex =
-      ImGui::CollapsingHeader ( "Live Texture View",
+      ImGui::CollapsingHeader (u8"实时纹理视图",
                                 config.textures.d3d11.cache ? ImGuiTreeNodeFlags_DefaultOpen :
                                                               0x0 );
 
@@ -500,7 +500,7 @@ SK_D3D11_ShaderModDlg (SK_TLS* pTLS = SK_TLS_Bottom ())
     {
       ImGui::SameLine    ( 2.5f);
       ImGui::TextColored ( ImColor::HSV (0.15f, 1.0f, 1.0f),
-                            "\t(Unavailable because Texture Caching is not enabled!)" );
+          u8"\t(不可用，因为未启用纹理缓存!)" );
     }
 
     uncollapsed_tex = uncollapsed_tex && config.textures.d3d11.cache;
@@ -511,9 +511,9 @@ SK_D3D11_ShaderModDlg (SK_TLS* pTLS = SK_TLS_Bottom ())
 
       if ((! warned_invalid_ref_count) && ReadAcquire (&SK_D3D11_TexRefCount_Failures) > 0)
       {
-        SK_ImGui_Warning ( L"The game's graphics engine is not correctly tracking texture memory.\n\n"
-                           L"\t\t\t\t>> Texture mod support has been partially disabled to prevent memory leaks.\n\n"
-                           L"\t\tYou may force support for texture mods by setting AllowUnsafeRefCounting=true" );
+        SK_ImGui_Warning ( L"游戏的图像引擎没有正确跟踪纹理记忆.\n\n"
+                           L"\t\t\t\t>> 纹理模支持被部分禁用，以防止内存泄漏.\n\n"
+                           L"\t\t你可以通过设置AllowUnsafeRefCounting=true来强制支持纹理模型" );
 
         warned_invalid_ref_count = true;
       }
@@ -533,7 +533,7 @@ SK_D3D11_ShaderModDlg (SK_TLS* pTLS = SK_TLS_Bottom ())
                                 ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NavFlattened );
 
     live_rt_view =
-        ImGui::CollapsingHeader ("Live RenderTarget View", ImGuiTreeNodeFlags_DefaultOpen);
+        ImGui::CollapsingHeader (u8"实时渲染目标视图", ImGuiTreeNodeFlags_DefaultOpen);
 
     SK_D3D11_KnownTargets::_mod_tool_wants =
         live_rt_view;
@@ -877,20 +877,20 @@ SK_D3D11_ShaderModDlg (SK_TLS* pTLS = SK_TLS_Bottom ())
           if (! focused)//hovered)
           {
             ImGui::BeginTooltip ();
-            ImGui::TextColored  (ImVec4 (0.9f, 0.6f, 0.2f, 1.0f), "You can view the output of individual render passes");
+            ImGui::TextColored  (ImVec4 (0.9f, 0.6f, 0.2f, 1.0f), u8"您可以查看单个渲染通道的输出");
             ImGui::Separator    ();
-            ImGui::BulletText   ("Press %ws while the mouse is hovering this list to select the previous output", virtKeyCodeToHumanKeyName [VK_OEM_4]);
-            ImGui::BulletText   ("Press %ws while the mouse is hovering this list to select the next output",     virtKeyCodeToHumanKeyName [VK_OEM_6]);
+            ImGui::BulletText   (u8"当鼠标悬停在此列表上时，按%ws选择上一个输出", virtKeyCodeToHumanKeyName [VK_OEM_4]);
+            ImGui::BulletText   (u8"当鼠标悬停在此列表上时，按%ws选择下一个输出",     virtKeyCodeToHumanKeyName [VK_OEM_6]);
             ImGui::EndTooltip   ();
           }
 
           else
           {
             ImGui::BeginTooltip ();
-            ImGui::TextColored  (ImVec4 (0.9f, 0.6f, 0.2f, 1.0f), "You can view the output of individual render passes");
+            ImGui::TextColored  (ImVec4 (0.9f, 0.6f, 0.2f, 1.0f), u8"You can view the output of individual render passes");
             ImGui::Separator    ();
-            ImGui::BulletText   ("Press LB to select the previous output");
-            ImGui::BulletText   ("Press RB to select the next output");
+            ImGui::BulletText   (u8"按“LB”键选择之前的输出");
+            ImGui::BulletText   (u8"按“RB”键选择下一个输出");
             ImGui::EndTooltip   ();
           }
 
@@ -1132,8 +1132,8 @@ SK_D3D11_ShaderModDlg (SK_TLS* pTLS = SK_TLS_Bottom ())
 
               ImGui::BeginGroup (                  );
               ImGui::Text       ( "Dimensions:   " );
-              ImGui::Text       ( "Format:       " );
-              ImGui::Text       ( "Usage:        " );
+              ImGui::Text       ( u8"格式:       " );
+              ImGui::Text       ( u8"使用:       " );
               ImGui::EndGroup   (                  );
 
               ImGui::SameLine   ( );
@@ -1151,9 +1151,9 @@ SK_D3D11_ShaderModDlg (SK_TLS* pTLS = SK_TLS_Bottom ())
               ImGui::SameLine   ();
 
               ImGui::BeginGroup ();
-              ImGui::Text       ( "References:   " );
-              ImGui::Text       ( "Bind Flags:   " );
-              ImGui::Text       ( "Misc. Flags:  " );
+              ImGui::Text       (u8"参考:   " );
+              ImGui::Text       (u8"绑定标志:   " );
+              ImGui::Text       (u8"其它标志s:  " );
               ImGui::EndGroup   (                  );
 
               ImGui::SameLine   ();
@@ -1191,16 +1191,16 @@ SK_D3D11_ShaderModDlg (SK_TLS* pTLS = SK_TLS_Bottom ())
                 {
                   ImGui::BeginTooltip ();
                   ImGui::BeginGroup   ();
-                  ImGui::TextUnformatted ("Mip Levels:   ");
+                  ImGui::TextUnformatted (u8"Mip Levels:   ");
                   if (desc.SampleDesc.Count > 1)
                   {
-                    ImGui::TextUnformatted ("Sample Count: ");
-                    ImGui::TextUnformatted ("MSAA Quality: ");
+                    ImGui::TextUnformatted (u8"样品数: ");
+                    ImGui::TextUnformatted (u8"MSAA质量: ");
                   }
-                  ImGui::TextUnformatted ("Usage:        ");
-                  ImGui::TextUnformatted ("Bind Flags:   ");
-                  ImGui::TextUnformatted ("CPU Access:   ");
-                  ImGui::TextUnformatted ("Misc Flags:   ");
+                  ImGui::TextUnformatted (u8"使用:        ");
+                  ImGui::TextUnformatted (u8"绑定标志:   ");
+                  ImGui::TextUnformatted (u8"CPU访问:   ");
+                  ImGui::TextUnformatted (u8"其它标志:   ");
                   ImGui::EndGroup     ();
 
                   ImGui::SameLine     ();

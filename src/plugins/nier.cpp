@@ -2100,11 +2100,11 @@ SK_FAR_PlugInCfg (void)
   }
 
 
-  ImGui::PushID ((const char *)u8"NieR:Automata™_CPL");
+  ImGui::PushID ((const char *)u8"NieR:Automataâ„¢_CPL");
 
   bool changed = false;
 
-  if (ImGui::CollapsingHeader ((const char *)u8"NieR:Automata™", ImGuiTreeNodeFlags_DefaultOpen))
+  if (ImGui::CollapsingHeader ((const char *)u8"NieR:Automataâ„¢, ImGuiTreeNodeFlags_DefaultOpen"))
   {
     ImGui::PushStyleColor (ImGuiCol_Header,        ImVec4 (0.90f, 0.40f, 0.40f, 0.45f));
     ImGui::PushStyleColor (ImGuiCol_HeaderHovered, ImVec4 (0.90f, 0.45f, 0.45f, 0.80f));

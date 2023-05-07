@@ -626,7 +626,7 @@ SK_ImGui_ControlPanelTitle (void)
       title += ")";
     }
 
-    title += "  Control Panel";
+    title += u8" 控制面板";
 
     extern __time64_t __SK_DLL_AttachTime;
 
@@ -4022,15 +4022,15 @@ SK_ImGui_ControlPanel (void)
     else if (0x0 != (api_mask &  static_cast <int> (SK_RenderAPI::D3D11)) &&
                     (api_mask != static_cast <int> (SK_RenderAPI::D3D11)  || translated_d3d9))
     {
-      if (! translated_d3d9)lstrcatA (szAPIName, (const char *)   u8"→11");
-      else                  strncpy  (szAPIName, (const char *)u8"D3D9→11", 32);
+      if (! translated_d3d9)lstrcatA (szAPIName, (const char *)   "→11");
+      else                  strncpy  (szAPIName, (const char *)"D3D9→11", 32);
     }
 
     lstrcatA ( szAPIName,
                  SK_GetBitness () == 32 ? "           [ 32-bit ]" :
                                           "           [ 64-bit ]" );
 
-    ImGui::MenuItem ("Active Render API        ",
+    ImGui::MenuItem (u8"活动渲染API        ",
                                   szAPIName,
                                     nullptr, false);
 
@@ -4127,7 +4127,7 @@ SK_ImGui_ControlPanel (void)
 
     if (windowed)
     {
-      if (ImGui::MenuItem (" Window Resolution     ", szResolution))
+      if (ImGui::MenuItem (" 窗口分辨率     ", szResolution))
       {
         config.window.res.override.x = (int)((float)(client.right  - client.left) * g_fDPIScale);
         config.window.res.override.y = (int)((float)(client.bottom - client.top)  * g_fDPIScale);
@@ -4141,7 +4141,7 @@ SK_ImGui_ControlPanel (void)
 
     else
     {
-      if (ImGui::MenuItem (" Fullscreen Resolution", szResolution))
+      if (ImGui::MenuItem (" 全屏分辨率n", szResolution))
       {
         config.window.res.override.x = (int)((float)(client.right  - client.left) * g_fDPIScale);
         config.window.res.override.y = (int)((float)(client.bottom - client.top)  * g_fDPIScale);
@@ -4196,7 +4196,7 @@ SK_ImGui_ControlPanel (void)
                                      device_x,
                                        device_y );
 
-      if (ImGui::MenuItem (" Device Resolution    ", szResolution))
+      if (ImGui::MenuItem (" 设备分辨率    ", szResolution))
       {
         config.window.res.override.x = device_x;
         config.window.res.override.y = device_y;
@@ -4214,7 +4214,7 @@ SK_ImGui_ControlPanel (void)
 
       bool selected = true;
 
-      if (ImGui::MenuItem (" Override Resolution   ",
+      if (ImGui::MenuItem (" 覆盖分辨率   ",
                                     szResolution,
                                        &selected)
          )
@@ -4260,15 +4260,15 @@ SK_ImGui_ControlPanel (void)
 
         else
         {
-          strcat ( szGSyncStatus, "   Disabled in this Game");
+          strcat ( szGSyncStatus, "   在此游戏中禁用");
         }
       }
 
-      ImGui::MenuItem (" G-Sync Status   ", szGSyncStatus, nullptr, true);
+      ImGui::MenuItem (" G-Sync状态   ", szGSyncStatus, nullptr, true);
 
       if (ImGui::IsItemClicked () || SK_ImGui_IsItemRightClicked ())
       {
-        ImGui::OpenPopup         ("G-Sync Control Panel");
+        ImGui::OpenPopup         ("G-Sync 控制面板");
         ImGui::SetNextWindowSize (ImVec2 (-1.0f, -1.0f), ImGuiCond_Always);
       }
 
@@ -4297,12 +4297,12 @@ SK_ImGui_ControlPanel (void)
 
     static bool has_own_scale = (hModTBFix != nullptr);
 
-    if ((! has_own_scale) && ImGui::CollapsingHeader ("UI Render Settings"))
+    if ((! has_own_scale) && ImGui::CollapsingHeader ("UI渲染设置"))
     {
       ImGui::TreePush    ("");
 
       if ( ImGui::SliderFloat ( "###IMGUI_SCALE", &config.imgui.scale,
-                                  1.0f, 3.0f, "UI Scaling Factor %.2f" ) )
+                                  1.0f, 3.0f, "UI缩放因子 %.2f" ) )
       {
         // ImGui does not perform strict parameter validation,
         //   and values out of range for this can be catastrophic.
@@ -4312,12 +4312,12 @@ SK_ImGui_ControlPanel (void)
 
       if (ImGui::IsItemHovered ())
       {
-        ImGui::SetTooltip ( "Optimal UI layout requires 1.0; other scales "
-                            "may not display as intended." );
+        ImGui::SetTooltip ( "最佳UI布局需要1.0;  "
+                            "其他尺寸可能无法按预期显示." );
       }
 
       ImGui::SameLine        ();
-      ImGui::Checkbox        ("Disable Transparency", &config.imgui.render.disable_alpha);
+      ImGui::Checkbox        ("禁用透明度", &config.imgui.render.disable_alpha);
 
       if (ImGui::IsItemHovered ())
         ImGui::SetTooltip ("Resolves UI flicker in frame-doubled games");
@@ -4607,7 +4607,7 @@ SK_ImGui_ControlPanel (void)
               config.render.framerate.present_interval == 0 &&
               config.render.framerate.target_fps        > 0.0f;
 
-            if (ImGui::Checkbox ("Latent Sync", &bLatentSync))
+            if (ImGui::Checkbox ("延迟同步", &bLatentSync))
             {
               double dRefresh =
                 rb.getActiveRefreshRate ();
@@ -4632,7 +4632,7 @@ SK_ImGui_ControlPanel (void)
 
                   if (rb.gsync_state.capable)
                   {
-                    SK_RunOnce (SK_ImGui_Warning (L"Latent Sync may not work correctly while G-Sync is active"));
+                      SK_RunOnce(SK_ImGui_Warning(L"当G-Sync处于活动状态时，潜在同步可能无法正常工作"));
                   }
                 }
 
@@ -4640,7 +4640,7 @@ SK_ImGui_ControlPanel (void)
                 __SK_LatentSyncSkip                      = 0;
 
                 SK_GetCommandProcessor ()->ProcessCommandFormatted (
-                  "TargetFPS %f", dRefresh
+                  "目标FPS %f", dRefresh
                 );
               }
             }
@@ -5931,16 +5931,16 @@ SK_ImGui_StageNextFrame (void)
 
     if (*szName != '\0')
     {
-      ImGui::Text            ("  Hello");                                                            ImGui::SameLine ();
+      ImGui::Text            (u8"  你好");                                                            ImGui::SameLine ();
       ImGui::TextColored     (ImColor::HSV (0.075f, 1.0f, 1.0f), "%s", szName);                      ImGui::SameLine ();
-      ImGui::TextUnformatted ("please see the Discord Release Channel, under");                      ImGui::SameLine ();
+      ImGui::TextUnformatted (u8"请参阅Discord发布频道");                      ImGui::SameLine ();
     }
     else
     {
-      ImGui::TextUnformatted ("  Please see the Discord Release Channel, under");                    ImGui::SameLine ();
+      ImGui::TextUnformatted (u8"  请参阅Discord发布频道");                    ImGui::SameLine ();
     }
-    ImGui::TextColored       (ImColor::HSV (.52f, 1.f, 1.f),  "Help | Releases");                    ImGui::SameLine ();
-    ImGui::TextUnformatted   ("for beta / stable updates to this project.");
+    ImGui::TextColored       (ImColor::HSV (.52f, 1.f, 1.f),  "帮助|发布");                    ImGui::SameLine ();
+    ImGui::TextUnformatted   (u8"用于此项目的测试版/稳定版更新.");
 
     ImGui::Spacing ();
     ImGui::Spacing ();
@@ -6024,7 +6024,7 @@ SK_ImGui_StageNextFrame (void)
           SK_WideCharToUTF8 (SK_Version_GetLastCheckTime_WStr ());
       }
 
-      ImGui::Text          ("You are currently using"); ImGui::SameLine ();
+      ImGui::Text          (u8"您当前正在使用"); ImGui::SameLine ();
       ImGui::TextColored   (ImColor::HSV (.15f,.9f,1.f), "%s",
                             SK_GetVersionStrA ()); ImGui::SameLine ();
                             //utf8_release_title.c_str());ImGui::SameLine ();
@@ -6054,7 +6054,7 @@ SK_ImGui_StageNextFrame (void)
 
     ImGui::Spacing         ();
 
-    ImGui::TextUnformatted ("Press");                   ImGui::SameLine ();
+    ImGui::TextUnformatted (u8"按下");                   ImGui::SameLine ();
 
     ImGui::TextColored     ( ImColor::HSV (.16f, 1.f, 1.f),
                                R"('%hs + %hs + %hs')",
@@ -6072,7 +6072,7 @@ SK_ImGui_StageNextFrame (void)
                                R"('Back + Start' (Xbox))" );
                                                         ImGui::SameLine ();
 
-    ImGui::TextUnformatted (  "to open Special K's configuration menu. " );
+    ImGui::TextUnformatted (u8"打开Special K的配置菜单. " );
 
     ImGui::SameLine (); ImGui::Spacing           ();
     ImGui::SameLine (); ImGui::VerticalSeparator ();
@@ -6080,7 +6080,7 @@ SK_ImGui_StageNextFrame (void)
     ImGui::SameLine ();
     ImGui::TextColored  (ImVec4 (0.999f, 0.666f, 0.333f, 1.f), ICON_FA_INFO_CIRCLE);
     ImGui::SameLine ();
-    ImGui::TextUnformatted ("Configure this Startup Banner in OSD Settings.");
+    ImGui::TextUnformatted (u8"在OSD设置中配置此启动横幅.");
 
     ImGui::End             ( );
     ImGui::PopStyleColor   (2);
@@ -6205,18 +6205,18 @@ SK_ImGui_StageNextFrame (void)
   {
     SK_ImGui_ConfirmDisplaySettings (nullptr, "", {});
 
-    if ( ImGui::BeginPopupModal ( "Confirm Display Setting Changes",
+    if ( ImGui::BeginPopupModal (u8"确认显示设置更改",
                                     nullptr,
                                       ImGuiWindowFlags_AlwaysAutoResize |
                                       ImGuiWindowFlags_NoScrollbar      |
                                       ImGuiWindowFlags_NoScrollWithMouse )
        )
     {
-      ImGui::TextColored ( ImColor::HSV (0.075f, 1.0f, 1.0f), "\n         Display Settings Will Revert in %4.1f Seconds...\n\n",
+      ImGui::TextColored ( ImColor::HSV (0.075f, 1.0f, 1.0f), u8"\n         显示设置将在 %4.1f 秒后恢复...\n\n",
                                                 15.0f - ( (float)SK_timeGetTime () - (float)SK_ImGui_DisplayChangeTime ) / 1000.0f );
       ImGui::Separator   ();
 
-      ImGui::TextColored (ImColor::HSV (0.15f, 1.0f, 1.0f),     " Keep Changes?");
+      ImGui::TextColored (ImColor::HSV (0.15f, 1.0f, 1.0f), u8" 保留更改?");
 
       ImGui::SameLine    (); ImGui::Spacing (); ImGui::SameLine ();
 
@@ -6250,11 +6250,11 @@ SK_ImGui_StageNextFrame (void)
 
       ImGui::SameLine (); ImGui::Spacing (); ImGui::SameLine ();
 
-      ImGui::Checkbox ( "Enable Confirmation",
+      ImGui::Checkbox (u8"启用确认",
                           &config.display.confirm_mode_changes );
 
       if (ImGui::IsItemHovered ())
-          ImGui::SetTooltip ("If disabled, resolution changes will apply immediately with no confirmation.");
+          ImGui::SetTooltip (u8"如果禁用，分辨率更改将立即应用，无需确认.");
 
       ImGui::EndPopup ();
     }
@@ -6282,8 +6282,8 @@ SK_ImGui_StageNextFrame (void)
   }
 
   if ( ImGui::BeginPopupModal ( SK_ImGui_WantRestart ?
-                   "Confirm Forced Software Restart" :
-                   "Confirm Forced Software Termination",
+      u8"确认强制软件重新启动" :
+      u8"确认强制软件终止",
                                   nullptr,
                                     ImGuiWindowFlags_AlwaysAutoResize |
                                     ImGuiWindowFlags_NoScrollbar      |
@@ -6292,13 +6292,13 @@ SK_ImGui_StageNextFrame (void)
   {
     nav_usable = true;
 
-    static const char* szConfirmExit    = " Confirm Exit? ";
-    static const char* szConfirmRestart = " Confirm Restart? ";
+    static const char* szConfirmExit    = u8" 确认退出? ";
+    static const char* szConfirmRestart = u8" 确认重新启动? ";
            const char* szConfirm        = SK_ImGui_WantRestart ?
                                               szConfirmRestart :
                                               szConfirmExit;
     static const char* szDisclaimer     =
-      "\n         You will lose any unsaved game progress.      \n\n";
+        u8"\n         您将丢失任何未保存的游戏进度.      \n\n";
 
     ImGui::TextColored (ImColor::HSV (0.075f, 1.0f, 1.0f), "%hs", szDisclaimer);
     ImGui::Separator   ();
@@ -6344,7 +6344,7 @@ SK_ImGui_StageNextFrame (void)
 
     ImGui::SameLine    ();
 
-    if (ImGui::Button  ("Cancel"))
+    if (ImGui::Button  (u8"取消"))
     {
       SK_ImGui_WantExit    = false;
       SK_ImGui_WantRestart = false;
@@ -6359,7 +6359,7 @@ SK_ImGui_StageNextFrame (void)
       ImGui::TextUnformatted (" ");
       ImGui::SameLine    ();
 
-      if (ImGui::Checkbox ( "Enable Alt + F4",
+      if (ImGui::Checkbox (u8"启用 Alt + F4",
                               &config.input.keyboard.catch_alt_f4 ))
       {
         // If user turns off here, then also turn off keyboard hook bypass
@@ -6370,12 +6370,12 @@ SK_ImGui_StageNextFrame (void)
       if (ImGui::IsItemHovered ())
       {
         ImGui::BeginTooltip ();
-        ImGui::Text         ("If disabled, game's default Alt + F4 behavior will apply");
+        ImGui::Text         (u8"如果禁用，将应用游戏的默认Alt+F4行为");
 
         if (SK_ImGui_Visible)
         {
           ImGui::Separator  ();
-          ImGui::BulletText ("Alt + F4 always displays a confirmation if the control panel is visible");
+          ImGui::BulletText (u8"如果控制面板可见，Alt+F4始终显示确认");
         }
         ImGui::EndTooltip   ();
       }
@@ -6394,17 +6394,17 @@ SK_ImGui_StageNextFrame (void)
                                                      0.925f * io.DisplaySize.y )
                                         );
 
-    if (! ImGui::IsPopupOpen ("Fullscreen / Windowed Display Mode Switch Failure"))
+    if (! ImGui::IsPopupOpen (u8"全屏/窗口显示模式切换故障"))
     {
       SK_ImGui_WantExit = false;
       orig_nav_state    = nav_usable;
 
-      ImGui::OpenPopup ("Fullscreen / Windowed Display Mode Switch Failure");
+      ImGui::OpenPopup (u8"全屏/窗口显示模式切换故障");
     }
   }
 
   if ( ImGui::BeginPopupModal (
-         "Fullscreen / Windowed Display Mode Switch Failure",
+      u8"全屏/窗口显示模式切换故障",
            nullptr,
              ImGuiWindowFlags_AlwaysAutoResize |
              ImGuiWindowFlags_NoScrollbar      |
@@ -6429,9 +6429,9 @@ SK_ImGui_StageNextFrame (void)
 
       nav_usable = true;
 
-      static const char* szAction      = " Reconfigure? ";
+      static const char* szAction      = u8" 重新配置? ";
       static const char* szDescription =
-        "\n         Flip Model Fullscreen Mode Switch Failed      \n\n";
+          u8"\n         Flip Model全屏模式切换失败      \n\n";
 
       ImGui::TextColored (ImColor::HSV (0.075f, 1.0f, 1.0f), "%hs", szDescription);
       ImGui::Separator   ();
@@ -6439,7 +6439,7 @@ SK_ImGui_StageNextFrame (void)
 
       ImGui::SameLine    (); ImGui::Spacing (); ImGui::SameLine ();
 
-      if (ImGui::Button  ("Force Windowed"))
+      if (ImGui::Button  (u8"强制窗口化"))
       {
         config.display.force_windowed   =  true;
         config.display.force_fullscreen = false;
@@ -6448,15 +6448,15 @@ SK_ImGui_StageNextFrame (void)
       } if (ImGui::IsItemHovered ())
         {
           ImGui::BeginTooltip ();
-          ImGui::Text         ("Safest Option");
+          ImGui::Text         (u8"最安全的选项");
           ImGui::Spacing      ();
           ImGui::SameLine     ();
-          ImGui::Text         ("Prefer SK's Window Mode Optimizations except for...");
+          ImGui::Text         (u8"首选SK的窗口模式优化，除了...");
           ImGui::Separator    ();
-          ImGui::Text         ("Scenarios not to Force Windowed Mode:");
-          ImGui::BulletText   ("Desktop and Game run at different Resolutions");
-          ImGui::BulletText   ("Desktop and Game run at different Refresh Rates");
-          ImGui::BulletText   ("Game is not giving you Hardware: Independent Flip");
+          ImGui::Text         (u8"不强制窗口模式的场景:");
+          ImGui::BulletText   (u8"桌面和游戏以不同的分辨率运行");
+          ImGui::BulletText   (u8"桌面和游戏以不同的刷新率运行");
+          ImGui::BulletText   (u8"游戏没有提供Hardware: Independent Flip");
           ImGui::EndTooltip   ();
         }
 
@@ -6482,7 +6482,7 @@ SK_ImGui_StageNextFrame (void)
 
       ImGui::SameLine    ();
 
-      if (ImGui::Button  ("Disable Flip Model"))
+      if (ImGui::Button  (u8"禁用 Flip Model"))
       {
         config.render.framerate.flip_discard = false;
 
@@ -6490,25 +6490,25 @@ SK_ImGui_StageNextFrame (void)
       } if (ImGui::IsItemHovered ())
         {
           ImGui::BeginTooltip ();
-          ImGui::Text         ("Not Recommended");
+          ImGui::Text         (u8"不推荐的");
           ImGui::Spacing      ();
           ImGui::SameLine     ();
-          ImGui::Text         ("Task switching performance will suffer, HDR will not work");
+          ImGui::Text         (u8"任务切换性能将受到影响，HDR将无法工作");
           ImGui::Separator    ();
-          ImGui::Text         ("Last-resort, if you really -must- have fullscreen exclusive");
+          ImGui::Text         (u8"最后的手段，如果你真的必须拥有全屏独家");
           ImGui::EndTooltip   ();
         }
 
       ImGui::SameLine    ();
 
-      if (ImGui::Button  ("No"))
+      if (ImGui::Button  (u8"否"))
       {
         _ClosePopup ();
       } if (ImGui::IsItemHovered ())
         {
           ImGui::SetTooltip (
-            "Do nothing, stop showing this message (until the next game launch) "
-            "and hope for the best."
+              u8"什么都不做，停止显示此消息（直到下一次游戏启动) "
+              u8"抱着最好的希望."
           );
         }
     }

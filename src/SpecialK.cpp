@@ -990,6 +990,7 @@ SK_EstablishDllRole (skWin32Module&& _sk_module)
          SK_IsDLLSpecialK (L"d3d11.dll")    ||
          SK_IsDLLSpecialK (L"OpenGL32.dll") ||
          SK_IsDLLSpecialK (L"ddraw.dll")    ||
+         SK_IsDLLSpecialK (L"injection.dll")||
          SK_IsDLLSpecialK (L"d3d8.dll"))
     {
       SK_MessageBox ( L"Please limit Special K to one (1) "
@@ -1004,6 +1005,8 @@ SK_EstablishDllRole (skWin32Module&& _sk_module)
 
   else if (0 == SK_Path_wcsicmp (wszShort, L"dxgi.dll"))
     SK_SetDLLRole (DLL_ROLE::DXGI);
+  else if (0 == SK_Path_wcsicmp(wszShort, L"injection.dll"))
+      SK_SetDLLRole(DLL_ROLE::DXGI);
 
   else if (0 == SK_Path_wcsicmp (wszShort, L"d3d11.dll"))
   {
@@ -1158,7 +1161,7 @@ SK_EstablishDllRole (skWin32Module&& _sk_module)
         { L"dxgi.dll",   L"d3d9.dll",
           L"d3d11.dll",  L"OpenGL32.dll",
           L"ddraw.dll",  L"d3d8.dll",
-          L"dinput8.dll"                };
+          L"dinput8.dll" , L"injection.dll" };
 
       // If there is a local Special K DLL in the game's directory,
       //   load it and then bow-out -- we are done here.

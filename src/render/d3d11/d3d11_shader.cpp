@@ -2760,7 +2760,7 @@ SK_LiveShaderClassView (sk_shader_class shader_type, bool& can_scroll)
 
   ImGui::BeginGroup   ();
 
-  if (ImGui::Checkbox ("Hide Inactive", hide_inactive))
+  if (ImGui::Checkbox (u8"隐藏非活动", hide_inactive))
   {
     list->dirty = true;
   }
@@ -2774,7 +2774,7 @@ SK_LiveShaderClassView (sk_shader_class shader_type, bool& can_scroll)
   bool cancel =
     tracker->cancel_draws;
 
-  if ( ImGui::Checkbox     ( shader_type != sk_shader_class::Compute ? "Skip Draws" :
+  if ( ImGui::Checkbox     ( shader_type != sk_shader_class::Compute ? u8"跳过绘制" :
                                                                        "Skip Dispatches",
                                &cancel )
      )
@@ -2789,7 +2789,7 @@ SK_LiveShaderClassView (sk_shader_class shader_type, bool& can_scroll)
     bool blink =
       tracker->highlight_draws;
 
-    if (ImGui::Checkbox   ( "Blink", &blink ))
+    if (ImGui::Checkbox   ( u8"闪烁", &blink ))
       tracker->highlight_draws = blink;
 
     if (shader_type != sk_shader_class::Compute)
@@ -2799,7 +2799,7 @@ SK_LiveShaderClassView (sk_shader_class shader_type, bool& can_scroll)
 
       ImGui::SameLine ();
 
-      if ( ImGui::Checkbox ( "Draw in Wireframe", &wireframe ) )
+      if ( ImGui::Checkbox (u8"绘制线框", &wireframe ) )
         tracker->wireframe = wireframe;
 
       bool on_top =
@@ -2807,7 +2807,7 @@ SK_LiveShaderClassView (sk_shader_class shader_type, bool& can_scroll)
 
       ImGui::SameLine ();
 
-      if (ImGui::Checkbox ( "Draw on Top", &on_top))
+      if (ImGui::Checkbox (u8"在顶部绘制", &on_top))
         tracker->on_top = on_top;
 
       ImGui::SameLine ();
@@ -2815,7 +2815,7 @@ SK_LiveShaderClassView (sk_shader_class shader_type, bool& can_scroll)
       bool probe_target =
         tracker->pre_hud_source;
 
-      if (ImGui::Checkbox ("Probe Outputs", &probe_target))
+      if (ImGui::Checkbox (u8"探头输出", &probe_target))
       {
         tracker->pre_hud_source = probe_target;
         tracker->pre_hud_rtv    =      nullptr;
@@ -2825,7 +2825,7 @@ SK_LiveShaderClassView (sk_shader_class shader_type, bool& can_scroll)
       {
         int rt_slot = tracker->pre_hud_rt_slot + 1;
 
-        if ( ImGui::Combo ( "Examine RenderTarget", &rt_slot,
+        if ( ImGui::Combo ( u8"检查渲染目标", &rt_slot,
                                "N/A\0"
                                "Slot 0\0Slot 1\0Slot 2\0"
                                "Slot 3\0Slot 4\0Slot 5\0"
@@ -2875,8 +2875,8 @@ SK_LiveShaderClassView (sk_shader_class shader_type, bool& can_scroll)
                 ImGui::PushStyleColor  (ImGuiCol_Border, ImVec4 (0.5f, 0.5f, 0.5f, 1.0f));
 
                 ImGui::BeginGroup (                  );
-                ImGui::Text       ( "Dimensions:   " );
-                ImGui::Text       ( "Format:       " );
+                ImGui::Text       ( u8"尺寸:   " );
+                ImGui::Text       ( u8"格式:       " );
                 ImGui::EndGroup   (                  );
 
                 ImGui::SameLine   ( );
@@ -2929,7 +2929,7 @@ SK_LiveShaderClassView (sk_shader_class shader_type, bool& can_scroll)
 
       ImGui::SameLine   ();
       ImGui::BeginGroup ();
-      if ( ImGui::Checkbox ( "Clear UAVs",
+      if ( ImGui::Checkbox ( u8"清除 UAVs",
                              &clear )
          )
       {
@@ -3103,20 +3103,20 @@ SK_LiveShaderClassView (sk_shader_class shader_type, bool& can_scroll)
     if (! focused)
     {
       ImGui::BeginTooltip ();
-      ImGui::TextColored  (ImVec4 (0.9f, 0.6f, 0.2f, 1.0f), "You can cancel all render passes using the selected %s shader to disable an effect", szShaderWord);
+      ImGui::TextColored  (ImVec4 (0.9f, 0.6f, 0.2f, 1.0f), u8"可以使用选定的%s着色器取消所有渲染过程以禁用效果", szShaderWord);
       ImGui::Separator    ();
-      ImGui::BulletText   ("Press %hs while the mouse is hovering this list to select the previous shader", SK_WideCharToUTF8 (virtKeyCodeToHumanKeyName [VK_OEM_4]).c_str ());
-      ImGui::BulletText   ("Press %hs while the mouse is hovering this list to select the next shader",     SK_WideCharToUTF8 (virtKeyCodeToHumanKeyName [VK_OEM_6]).c_str ());
+      ImGui::BulletText   (u8"鼠标悬停在此列表时按%hs以选择上一个着色器", SK_WideCharToUTF8 (virtKeyCodeToHumanKeyName [VK_OEM_4]).c_str ());
+      ImGui::BulletText   (u8"鼠标悬停在此列表时按%hs以选择下一个着色器",     SK_WideCharToUTF8 (virtKeyCodeToHumanKeyName [VK_OEM_6]).c_str ());
       ImGui::EndTooltip   ();
     }
 
     else
     {
       ImGui::BeginTooltip ();
-      ImGui::TextColored  (ImVec4 (0.9f, 0.6f, 0.2f, 1.0f), "You can cancel all render passes using the selected %s shader to disable an effect", szShaderWord);
+      ImGui::TextColored  (ImVec4 (0.9f, 0.6f, 0.2f, 1.0f), u8"可以使用选定的%s着色器取消所有渲染过程以禁用效果", szShaderWord);
       ImGui::Separator    ();
-      ImGui::BulletText   ("Press LB to select the previous shader");
-      ImGui::BulletText   ("Press RB to select the next shader");
+      ImGui::BulletText   (u8"按LB选择上一个着色器");
+      ImGui::BulletText   (u8"按RB选择下一个着色器");
       ImGui::EndTooltip   ();
     }
 
@@ -3593,8 +3593,8 @@ SK_LiveShaderClassView (sk_shader_class shader_type, bool& can_scroll)
 
     bool cancel_ = skip;
 
-    if (ImGui::Checkbox ( shader_type == sk_shader_class::Compute ? "Never Dispatch" :
-                                                                    "Never Draw", &cancel_))
+    if (ImGui::Checkbox ( shader_type == sk_shader_class::Compute ? "从不 Dispatch" :
+                                                                    u8"从不绘制", &cancel_))
     {
       if (cancel_)
       {
@@ -3623,7 +3623,7 @@ SK_LiveShaderClassView (sk_shader_class shader_type, bool& can_scroll)
       if (wire)
         ImGui::PushStyleColor (ImGuiCol_Text, WireframeColorCycle ());
 
-      if (ImGui::Checkbox ("Always Draw in Wireframe", &wireframe))
+      if (ImGui::Checkbox (u8"始终绘制线框", &wireframe))
       {
         if (wireframe)
         {
@@ -3646,7 +3646,7 @@ SK_LiveShaderClassView (sk_shader_class shader_type, bool& can_scroll)
       if (top)
         ImGui::PushStyleColor (ImGuiCol_Text, OnTopColorCycle ());
 
-      if (ImGui::Checkbox ("Always Draw on Top", &on_top))
+      if (ImGui::Checkbox (u8"始终在顶部绘制", &on_top))
       {
         if (on_top)
         {
@@ -3670,7 +3670,7 @@ SK_LiveShaderClassView (sk_shader_class shader_type, bool& can_scroll)
       if (hud_shader)
         ImGui::PushStyleColor (ImGuiCol_Text, HudColorCycle ());
 
-      if (ImGui::Checkbox ("Shader Belongs to HUD", &hud))
+      if (ImGui::Checkbox (u8"着色器属于HUD", &hud))
       {
         if (hud)
         {
@@ -3697,7 +3697,7 @@ SK_LiveShaderClassView (sk_shader_class shader_type, bool& can_scroll)
       bool reshade_before = pShader->trigger_reshade.before.count (tracker->crc32c) != 0;
       bool reshade_after  = pShader->trigger_reshade.after.count  (tracker->crc32c) != 0;
 
-      if (ImGui::Checkbox ("Trigger ReShade On First Draw", &reshade_before))
+      if (ImGui::Checkbox (u8"第一次绘制时触发重新着色", &reshade_before))
       {
         if (reshade_before)
         {
@@ -3712,7 +3712,7 @@ SK_LiveShaderClassView (sk_shader_class shader_type, bool& can_scroll)
         }
       }
 
-      if (ImGui::Checkbox ("Trigger ReShade After First Draw", &reshade_after))
+      if (ImGui::Checkbox (u8"第一次绘制后触发重新着色", &reshade_after))
       {
         if (reshade_after)
         {
@@ -4208,7 +4208,7 @@ SK_D3D11_LiveShaderView (bool& can_scroll)
           ui_link_activated = change_sel_vs != 0x00;
           used_last_frame   = shaders->vertex.changes_last_frame > 0;
           //SK_D3D11_GetVertexPipelineDesc (wszPipelineDesc);
-          sprintf (label,     "Vertex Shaders\t\t%hs###LiveVertexShaderTree", szPipelineDesc);
+          sprintf (label,     u8"顶点着色器\t\t%hs###LiveVertexShaderTree", szPipelineDesc);
           break;
         case sk_shader_class::Pixel:
           ui_link_activated = change_sel_ps != 0x00;
@@ -4216,31 +4216,31 @@ SK_D3D11_LiveShaderView (bool& can_scroll)
           //SK_D3D11_GetRasterPipelineDesc (wszPipelineDesc);
           //lstrcatW                       (wszPipelineDesc, L"\t\t");
           //SK_D3D11_GetPixelPipelineDesc  (wszPipelineDesc);
-          sprintf (label,     "Pixel Shaders\t\t%hs###LivePixelShaderTree", szPipelineDesc);
+          sprintf (label,     u8"像素着色器\t\t%hs###LivePixelShaderTree", szPipelineDesc);
           break;
         case sk_shader_class::Geometry:
           ui_link_activated = change_sel_gs != 0x00;
           used_last_frame   = shaders->geometry.changes_last_frame > 0;
           //SK_D3D11_GetGeometryPipelineDesc (wszPipelineDesc);
-          sprintf (label,     "Geometry Shaders\t\t%hs###LiveGeometryShaderTree", szPipelineDesc);
+          sprintf (label,     u8"几何着色器\t\t%hs###LiveGeometryShaderTree", szPipelineDesc);
           break;
         case sk_shader_class::Hull:
           ui_link_activated = change_sel_hs != 0x00;
           used_last_frame   = shaders->hull.changes_last_frame > 0;
           //SK_D3D11_GetTessellationPipelineDesc (wszPipelineDesc);
-          sprintf (label,     "Hull Shaders\t\t%hs###LiveHullShaderTree", szPipelineDesc);
+          sprintf (label,     u8"船体着色器\t\t%hs###LiveHullShaderTree", szPipelineDesc);
           break;
         case sk_shader_class::Domain:
           ui_link_activated = change_sel_ds != 0x00;
           used_last_frame   = shaders->domain.changes_last_frame > 0;
           //SK_D3D11_GetTessellationPipelineDesc (wszPipelineDesc);
-          sprintf (label,     "Domain Shaders\t\t%hs###LiveDomainShaderTree", szPipelineDesc);
+          sprintf (label,     u8"域着色器\t\t%hs###LiveDomainShaderTree", szPipelineDesc);
           break;
         case sk_shader_class::Compute:
           ui_link_activated = change_sel_cs != 0x00;
           used_last_frame   = shaders->compute.changes_last_frame > 0;
           //SK_D3D11_GetComputePipelineDesc (wszPipelineDesc);
-          sprintf (label,     "Compute Shaders\t\t%hs###LiveComputeShaderTree", szPipelineDesc);
+          sprintf (label,     u8"计算着色器\t\t%hs###LiveComputeShaderTree", szPipelineDesc);
           break;
         default:
           break;
@@ -4279,28 +4279,28 @@ SK_D3D11_LiveShaderView (bool& can_scroll)
 
   ImGui::Separator   ();
 
-  if (ImGui::Button (" Clear Shader State "))
+  if (ImGui::Button (u8"清除着色器状态 "))
   {
     SK_D3D11_ClearShaderState ();
   }
 
   ImGui::SameLine ();
 
-  if (ImGui::Button (" Store Shader State "))
+  if (ImGui::Button (u8"存储着色器状态 "))
   {
     SK_D3D11_StoreShaderState ();
   }
 
   ImGui::SameLine ();
 
-  if (ImGui::Button (" Add to Shader State "))
+  if (ImGui::Button (u8"添加到着色器状态 "))
   {
     SK_D3D11_LoadShaderState (false);
   }
 
   ImGui::SameLine ();
 
-  if (ImGui::Button (" Restore FULL Shader State "))
+  if (ImGui::Button (u8"恢复完整的着色状态 "))
   {
     SK_D3D11_LoadShaderState ();
   }
@@ -4309,7 +4309,7 @@ SK_D3D11_LiveShaderView (bool& can_scroll)
   //             ( SK_GetCurrentGameID () == SK_GAME_ID::YakuzaKiwami2 ) );
 
   ImGui::SameLine ();
-  ImGui::Checkbox ("StateTrack Only when Tools are Open",
+  ImGui::Checkbox (u8"仅当工具处于打开状态时才使用状态追踪",
                    &SK_D3D11_DontTrackUnlessModToolsAreOpen);
 
   //ImGui::Checkbox ("Convert typeless resource views", &convert_typeless);
@@ -4354,7 +4354,7 @@ SK_D3D11_ShaderModDlg_RTVContributors (void)
     sk_shader_class
                 type         = sk_shader_class::Vertex;
     const char* namespace_id = "Vertex";
-    const char* header_title = "Vertex Shaders##rtv_refs";
+    const char* header_title = u8"顶点着色器##rtv_refs";
 
     concurrency::concurrent_unordered_set <uint32_t>&
                 ref_tracker  = tracked_rtv->ref_vs;
@@ -4369,37 +4369,37 @@ SK_D3D11_ShaderModDlg_RTVContributors (void)
     } ui;
   } lists [] = {
     {  sk_shader_class::Vertex,          "Vertex",
-                       "Vertex Shaders##rtv_refs",
+                       u8"顶点着色器##rtv_refs",
                                 tracked_rtv->ref_vs,
       SK_D3D11_Shaders->vertex,       change_sel_vs,
                                              { true,
                                &tracked_rtv->ref_ps } },
 
     {  sk_shader_class::Pixel,           "Pixel",
-                       "Pixel Shaders##rtv_refs",
+                       u8"像素着色器##rtv_refs",
                                tracked_rtv->ref_ps,
       SK_D3D11_Shaders->pixel,       change_sel_ps },
 
     {  sk_shader_class::Geometry,        "Geometry",
-                       "Geometry Shaders##rtv_refs",
+                       u8"几何着色器##rtv_refs",
                                   tracked_rtv->ref_gs,
       SK_D3D11_Shaders->geometry,       change_sel_gs,
                                                  true },
 
     {  sk_shader_class::Hull,            "Hull",
-                       "Hull Shaders##rtv_refs",
+                       u8"船体着色器##rtv_refs",
                               tracked_rtv->ref_hs,
       SK_D3D11_Shaders->hull,       change_sel_hs,
                                            { true,
                              &tracked_rtv->ref_ds } },
 
     {  sk_shader_class::Domain,          "Domain",
-                       "Domain Shaders##rtv_refs",
+                       u8"域着色器##rtv_refs",
                                 tracked_rtv->ref_ds,
       SK_D3D11_Shaders->domain,       change_sel_ds },
 
     {  sk_shader_class::Compute,         "Compute",
-                       "Compute Shaders##rtv_refs",
+                       u8"计算着色器##rtv_refs",
                                 tracked_rtv->ref_cs,
       SK_D3D11_Shaders->compute,      change_sel_cs,
                                                true }
@@ -4482,10 +4482,10 @@ SK_D3D11_ShaderModDlg_RTVContributors (void)
         {
           ImGui::SetNextWindowSize ( ImVec2 (-1.0f, -1.0f),
                                        ImGuiCond_Always );
-          ImGui::OpenPopup         ( "ShaderSubMenu");
+          ImGui::OpenPopup         ( u8"着色器子菜单");
         }
 
-        if (ImGui::BeginPopup ("ShaderSubMenu"))
+        if (ImGui::BeginPopup (u8"着色器子菜单"))
         {
           ShaderMenu (
             &it.shader,

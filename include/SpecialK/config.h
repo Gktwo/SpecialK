@@ -244,7 +244,7 @@ struct sk_config_t
         float       size   = 7.0F;
       } chinese      { "msyh.ttc",     18.0f },
         cyrillic     { "arial.ttf",    18.0f },
-        default_font { "arial.ttf",    18.0f },
+        default_font { "msyh.ttc",    18.0f },
         japanese     { "msgothic.ttc", 18.0f },
         korean       { "malgun.ttf",   18.0f };
     } font;
