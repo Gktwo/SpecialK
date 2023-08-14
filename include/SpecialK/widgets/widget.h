@@ -241,7 +241,7 @@ protected:
   float       nits           = 80.0f;
 
   ImVec2      min_size       = ImVec2 ( 375.0,  240.0);
-  ImVec2      max_size       = ImVec2 (1024.0, 1024.0);
+  ImVec2      max_size       = ImVec2 (2048.0, 2048.0);
   ImVec2      size           = ImVec2 ( 375.0,  240.0); // Values (-1,1) are scaled to resolution
   ImVec2      pos            = ImVec2 (   0.0,    0.0); // Values (-∞,1] and [1,∞) are absolute
 
@@ -507,8 +507,13 @@ public:
 
   void   reset     (void) noexcept
   {
+    last_val      = 0;
     values_offset = 0;
     updates       = 0;
+
+    std::fill_n (values.begin (), max_samples, (_T)0);
+
+    cached_stats.reset ();
   }
 
 protected:
@@ -566,6 +571,14 @@ protected:
         max       = 0,
         avg       = 0;
     int last_calc = 0;
+
+    void reset (void)
+    {
+            min = 0;
+            max = 0;
+            avg = 0;
+      last_calc = 0;
+    }
   } cached_stats;
 };
 

@@ -1,5 +1,5 @@
 //
-// Copyright 2017-2021  Andon  "Kaldaien" Coleman,
+// Copyright 2017-2023  Andon  "Kaldaien" Coleman,
 //                      Niklas "DrDaxxy"  Kielblock,
 //                      Peter  "Durante"  Thoman
 //
@@ -35,7 +35,7 @@
 
 
 
-#define FAR_VERSION_NUM L"0.10.2"
+#define FAR_VERSION_NUM L"0.10.3"
 #define FAR_VERSION_STR L"FAR v " FAR_VERSION_NUM
 
 // Block until update finishes, otherwise the update dialog
@@ -858,7 +858,7 @@ SK_FAR_EndFrameEx (BOOL bWaitOnFail)
 
         static const
           LONGLONG llClockFreq =
-                   (SK_QpcFreq / NIER_INTERNAL_FPS);
+                   (SK_PerfFreq / NIER_INTERNAL_FPS);
 
         static auto& rb =
           SK_GetCurrentRenderBackend ();
@@ -1795,11 +1795,6 @@ SK_FAR_InitPlugin (void)
 
       config.render.framerate.target_fps = 60.0;
                             __target_fps = 60.0;
-
-      config.render.framerate.buffer_count     = 4;
-      config.render.framerate.pre_render_limit = 5;
-      config.render.framerate.swapchain_wait   = 1;
-      config.render.framerate.max_delta_time   = 2;
 
       config.render.framerate.sleepless_render = true;
       config.render.framerate.sleepless_window = true;

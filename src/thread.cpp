@@ -47,6 +47,9 @@ static constexpr DWORD MAGIC_THREAD_EXCEPTION = 0x406D1388;
 
 SK_LazyGlobal <concurrency::concurrent_unordered_map <DWORD, std::wstring>> _SK_ThreadNames;
 SK_LazyGlobal <concurrency::concurrent_unordered_set <DWORD>>               _SK_SelfTitledThreads;
+SK_LazyGlobal <concurrency::concurrent_unordered_set <DWORD>>               _SK_UntitledThreads;
+
+void __make_self_titled (DWORD dwTid);
 
 // Game has given this thread a custom name, it's special :)
 bool
@@ -59,7 +62,63 @@ SK_Thread_HasCustomName (DWORD dwTid)
            SelfTitled.cend (     ) );
 }
 
+SetThreadDescription_pfn SK_SetThreadDescription = &SetThreadDescription_NOP;
+GetThreadDescription_pfn SK_GetThreadDescription = &GetThreadDescription_NOP;
+
 static std::wstring _noname = L"";
+
+std::wstring&
+SK_Thread_QueryNameFromOS (DWORD dwTid)
+{
+  if (_SK_UntitledThreads->find (dwTid) == _SK_UntitledThreads->cend ())
+  {
+    SK_AutoHandle hThread (
+               OpenThread ( THREAD_QUERY_LIMITED_INFORMATION,
+                              FALSE,
+                                dwTid ) );
+
+    wchar_t                                          *wszThreadName = nullptr;
+    if (SUCCEEDED (SK_GetThreadDescription (hThread, &wszThreadName)))
+    {
+      if ( wszThreadName != nullptr &&
+          *wszThreadName != L'\0' ) // Empty strings are not useful :)
+      {
+        auto& names =
+          _SK_ThreadNames.get ();
+
+        __make_self_titled (dwTid);
+                     names [dwTid] = wszThreadName;
+    
+        LocalFree (wszThreadName);
+
+        return
+          names [dwTid];
+      }
+
+      LocalFree (wszThreadName);
+    }
+
+    _SK_UntitledThreads->insert (dwTid);
+  }
+
+  return
+    _noname;
+}
+
+DWORD
+SK_Thread_FindByName (std::wstring name)
+{
+  auto& threads =
+    _SK_ThreadNames.get ();
+
+  for (auto &thread : threads)
+  {
+    if (thread.second._Equal (name.c_str ()))
+      return thread.first;
+  }
+
+  return 0;
+}
 
 std::wstring&
 SK_Thread_GetName (DWORD dwTid)
@@ -74,7 +133,7 @@ SK_Thread_GetName (DWORD dwTid)
     return (*it).second;
 
   return
-    _noname;
+    SK_Thread_QueryNameFromOS (dwTid);
 }
 
 std::wstring&
@@ -83,9 +142,6 @@ SK_Thread_GetName (HANDLE hThread)
   return
     SK_Thread_GetName (GetThreadId (hThread));
 }
-
-SetThreadDescription_pfn SK_SetThreadDescription = &SetThreadDescription_NOP;
-GetThreadDescription_pfn SK_GetThreadDescription = &GetThreadDescription_NOP;
 
 // Avoid SEH unwind problems
 void
@@ -107,7 +163,7 @@ SK_Thread_SetWin10NameFromException (THREADNAME_INFO *pTni)
 {
   bool bRet = false;
 
-  if (SK_SetThreadDescription != nullptr)
+  if (SK_SetThreadDescription != nullptr && pTni->szName != nullptr)
   {
     DWORD dwTid =
       ( pTni->dwThreadID == -1 ) ?
@@ -192,9 +248,7 @@ SetCurrentThreadDescription (_In_ PCWSTR lpThreadDescription)
         *_SK_ThreadNames;
 
     SK_TLS *pTLS =
-      SK_TLS_Bottom ();//= ( ReadAcquire (&__SK_DLL_Attached) ||
-                       // (! ReadAcquire (&__SK_DLL_Ending)))  ?
-                       //                     SK_TLS_Bottom () : nullptr;
+      SK_TLS_Bottom ();
 
     DWORD               dwTid  = SK_Thread_GetCurrentId ();
     __make_self_titled (dwTid);
@@ -993,6 +1047,47 @@ SK_GetRenderThreadID (void)
 
   return
     ReadULongAcquire (&rb.thread);
+}
+
+DWORD
+SK_GetMainThreadID (void)
+{
+  SK_AutoHandle hThreadSnapshot (
+    CreateToolhelp32Snapshot (TH32CS_SNAPTHREAD, 0)
+  );
+
+  if (! hThreadSnapshot.isValid ())
+  {
+    return
+      static_cast <DWORD> (-1);
+  }
+
+  THREADENTRY32
+    tent        = { };
+    tent.dwSize = sizeof (THREADENTRY32);
+
+  DWORD tid = 0;
+  DWORD pid = GetCurrentProcessId ();
+
+  if (Thread32First (hThreadSnapshot, &tent))
+  {
+    while (! tid)
+    {
+      if (! Thread32Next (hThreadSnapshot, &tent))
+        break;
+
+      if (GetLastError () == ERROR_NO_MORE_FILES)
+        break;
+
+      if (tent.th32OwnerProcessID == pid)
+        tid = tent.th32ThreadID;
+    }
+  }
+
+  if (tid == 0)
+    return static_cast <DWORD> (-1);
+
+  return tid;
 }
 
 

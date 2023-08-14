@@ -5,7 +5,7 @@
 //#define INCLUDE_VISUALIZATIONS
 //#define INCLUDE_ACES
 //#define INCLUDE_HDR10
-#define INCLUDE_NAN_MITIGATION
+//#define INCLUDE_NAN_MITIGATION
 //#define DEBUG_NAN
 //#define UTIL_STRIP_NAN
 
@@ -67,10 +67,11 @@ SK_ProcessColor4 ( float4 color,
                       int strip_srgb = 1 )
 {
 #ifdef INCLUDE_NAN_MITIGATION
-  if (AnyIsNan      (color) ||
-      AnyIsNegative (color))
-                color =
-    float4 (0.0f, 0.0f, 0.0f, 0.0f);
+  color = float4
+    ( (! IsNan (color.r)) * (! IsInf (color.r)) * color.r,
+      (! IsNan (color.g)) * (! IsInf (color.g)) * color.g,
+      (! IsNan (color.b)) * (! IsInf (color.b)) * color.b,
+      (! IsNan (color.a)) * (! IsInf (color.a)) * color.a );
 #endif
 
   float4 out_color =
@@ -89,7 +90,6 @@ SK_ProcessColor4 ( float4 color,
     float4 (0.0f, 0.0f, 0.0f, 0.0f) : out_color;
 #endif
                                 
-
   return
     float4 (0.0f, 0.0f, 0.0f, 0.0f);
 }
@@ -116,24 +116,20 @@ float4 getNonNanSample (float4 color, float2 uv)
   color =
     texLastFrame0.Sample ( sampler0, uv );
 
-  if ( (! AnyIsNan      (color)) &&
-       (! AnyIsNegative (color)) )
+  if ( (! AnyIsNan   (color)) )
     return color;
 
   for ( uint i = 0 ; i < 8 ; ++i )
   {
-    if ( AnyIsNan      (color) ||
-         AnyIsNegative (color) )
+    if ( AnyIsNan    (color) )
       color =
         texMainScene.Sample  ( sampler0, uv + uv_offset [i] );
 
-    if ( AnyIsNan      (color) ||
-         AnyIsNegative (color) )
+    if ( AnyIsNan    (color) )
       color =
         texLastFrame0.Sample ( sampler0, uv + uv_offset [i] );
 
-    if ( (! AnyIsNan      (color)) &&
-         (! AnyIsNegative (color)) )
+    if ( (! AnyIsNan (color)) )
       return color;
   }
 
@@ -156,11 +152,10 @@ float4 main (PS_INPUT input) : SV_TARGET
       // A UNORM RenderTarget would return this instead of NaN,
       //   and the game is expecting UNORM render targets :)
       return
-        float4 ( isnan (ret.r) ? 0.0f : max (isinf (ret.r) ? 0.0f : ret.r, 0.0f),
-                 isnan (ret.g) ? 0.0f : max (isinf (ret.g) ? 0.0f : ret.g, 0.0f),
-                 isnan (ret.b) ? 0.0f : max (isinf (ret.b) ? 0.0f : ret.b, 0.0f),
-                 isnan (ret.a) ? 0.0f : max (isinf (ret.a) ? 0.0f : ret.a, 0.0f) );
-      
+        float4 ( (! IsNan (ret.r)) * (! IsInf (ret.r)) * ret.r,
+                 (! IsNan (ret.g)) * (! IsInf (ret.g)) * ret.g,
+                 (! IsNan (ret.b)) * (! IsInf (ret.b)) * ret.b,
+                 (! IsNan (ret.a)) * (! IsInf (ret.a)) * ret.a );
 #endif
     } break;
 
@@ -171,13 +166,11 @@ float4 main (PS_INPUT input) : SV_TARGET
         texMainScene.Sample ( sampler0,
                                 input.uv );
 
-      color.r = isnan (color.r) ? 0.0f : max (isinf (color.r) ? 0.0f : color.r, 0.0f);
-      color.g = isnan (color.g) ? 0.0f : max (isinf (color.g) ? 0.0f : color.g, 0.0f);
-      color.b = isnan (color.b) ? 0.0f : max (isinf (color.b) ? 0.0f : color.b, 0.0f);
-      color.a = isnan (color.a) ? 0.0f : max (isinf (color.a) ? 0.0f : color.a, 0.0f);
-
       return
-        color;
+        float4 ( (! IsNan (color.r)) * (! IsInf (color.r)) * color.r,
+                 (! IsNan (color.g)) * (! IsInf (color.g)) * color.g,
+                 (! IsNan (color.b)) * (! IsInf (color.b)) * color.b,
+                 (! IsNan (color.a)) * (! IsInf (color.a)) * color.a );
     } break;
 #endif
   }
@@ -197,8 +190,8 @@ float4 main (PS_INPUT input) : SV_TARGET
 
 #ifdef INCLUDE_NAN_MITIGATION
 #ifdef DEBUG_NAN
-  if ( AnyIsNan      (hdr_color) ||
-       AnyIsNegative (hdr_color) )
+  if ( AnyIsNan      (hdr_color)/*||
+       AnyIsNegative (hdr_color) */)
   {
     hdr_color.rgba =
       getNonNanSample ( hdr_color, input.uv );
@@ -222,25 +215,15 @@ float4 main (PS_INPUT input) : SV_TARGET
     }
   }
 #else
+  // If the input were strictly SDR, we could eliminate NaN
+  //   using saturate (...), but we want to keep potential
+  //     HDR input pixels.
   if ( AnyIsNan (hdr_color) )
     hdr_color =
       getNonNanSample (hdr_color, input.uv);
 
-  if (hdr_color.r < 0.0f||
-      hdr_color.g < 0.0f||
-      hdr_color.b < 0.0f||
-      hdr_color.a < 0.0f )
-  {if(hdr_color.r < 0.0f )
-      hdr_color.r = 0.0f;
-   if(hdr_color.g < 0.0f )
-      hdr_color.g = 0.0f;
-   if(hdr_color.b < 0.0f )
-      hdr_color.b = 0.0f;
-   if(hdr_color.a < 0.0f )
-      hdr_color.a = 0.0f;}
-
- ///if (! any (hdr_color))
- ///  return float4 (0.0f, 0.0f, 0.0f, 0.0f);
+  hdr_color =
+    clamp (hdr_color, 0.0, 125.0);
 #endif
 #endif
 
@@ -265,7 +248,7 @@ float4 main (PS_INPUT input) : SV_TARGET
 #endif
 
 
-  hdr_color.rgb = max ( 0.0f,
+  hdr_color.rgb = Clamp_scRGB (
 #ifdef INCLUDE_HDR10
     bIsHDR10 ?
       REC2020toREC709 (RemoveREC2084Curve ( hdr_color.rgb )) :
@@ -327,14 +310,14 @@ float4 main (PS_INPUT input) : SV_TARGET
   if (uiToneMapper != TONEMAP_HDR10_to_scRGB)
 #endif
   {
-    if ( input.color.x < 0.0125f - FLT_MIN ||
-         input.color.x > 0.0125f + FLT_MIN )
+    if ( input.color.x < 0.0125f - FLT_EPSILON ||
+         input.color.x > 0.0125f + FLT_EPSILON )
     {
-      hdr_color.rgb = LinearToLogC (hdr_color.rgb);
-      hdr_color.rgb = Contrast     (hdr_color.rgb,
+      hdr_color.rgb = clamp (LinearToLogC (hdr_color.rgb), 0.0, 125.0);
+      hdr_color.rgb =        Contrast     (hdr_color.rgb,
               0.18f * (0.1f * input.color.x / 0.0125f) / 100.0f,
                        (sdrLuminance_NonStd / 0.0125f) / 100.0f);
-      hdr_color.rgb = LogCToLinear (hdr_color.rgb);
+      hdr_color.rgb = clamp (LogCToLinear (hdr_color.rgb), 0.0, 125.0);
     }
   }
 
@@ -385,7 +368,7 @@ float4 main (PS_INPUT input) : SV_TARGET
     hdr_color =
       SK_ProcessColor4 (hdr_color, uiToneMapper);
   }
-
+    
 #ifdef INCLUDE_HDR10
   if (uiToneMapper != TONEMAP_HDR10_to_scRGB)
 #endif
@@ -407,7 +390,7 @@ float4 main (PS_INPUT input) : SV_TARGET
 
     float3 new_color =
       PQToLinear (
-        LinearToPQ ( hdr_color.rgb, pb_params [0] ) *
+        LinearToPQ ( hdr_color.rgb, pb_params [0]) *
                      pb_params [2], pb_params [1]
                  ) / pb_params [3];
 
@@ -416,28 +399,23 @@ float4 main (PS_INPUT input) : SV_TARGET
 #endif
       hdr_color.rgb = new_color;
   }
-
+    
 #ifdef INCLUDE_HDR10
   if (uiToneMapper != TONEMAP_HDR10_to_scRGB)
 #endif
   {
-    if ( hdrSaturation >= 1.0f + FLT_MIN ||
-         hdrSaturation <= 1.0f - FLT_MIN || uiToneMapper == TONEMAP_ACES_FILMIC )
+    if ( hdrSaturation >= 1.0f + FLT_EPSILON ||
+         hdrSaturation <= 1.0f - FLT_EPSILON || uiToneMapper == TONEMAP_ACES_FILMIC )
     {
       float saturation =
         hdrSaturation + 0.05 * ( uiToneMapper == TONEMAP_ACES_FILMIC );
 
-      // sRGB primaries <--> ACEScg  (* not sRGB gamma)
       hdr_color.rgb =
-        ACEScg_to_sRGB (
-          Saturation (
-            sRGB_to_ACEScg (hdr_color.rgb),
-              saturation
-          )
-        );
+        Saturation ( hdr_color.rgb,
+                     saturation );
     }
   }
-
+    
 #if 0
   float3 vNormalColor =
     normalize (hdr_color.rgb);
@@ -468,7 +446,7 @@ float4 main (PS_INPUT input) : SV_TARGET
     if (hdrGamutExpansion > 0.0f)
     {
       hdr_color.rgb =
-        expandGamut (hdr_color.rgb * 2.0f, hdrGamutExpansion) * 0.5f;
+        expandGamut (hdr_color.rgb, hdrGamutExpansion);
     }
   }
 
@@ -486,36 +464,25 @@ float4 main (PS_INPUT input) : SV_TARGET
            w = SK_Color_xyY_from_RGB ( _ColorSpaces [cs], float3 (D65,             hdrLuminance_MaxLocal / 80.0) );
 
     float3 vColor_xyY =
-        SK_Color_xyY_from_RGB ( _ColorSpaces [cs], hdr_color.rgb / fLuma );
+         SK_Color_xyY_from_RGB ( _ColorSpaces [cs], normalize (hdr_color.rgb) );
 
     float3 vTriangle [] = {
       r, g, b
     };
 
     // For time-based glow
-    float fScale    = 1.0f;
-
-    static const float3 vIdent3   = float3 ( 1.0f,    1.0f,    1.0f    );
-    static const float3 vEpsilon3 = float3 ( FLT_MIN, FLT_MIN, FLT_MIN );
+    float fScale = 1.0f;
 
     float3 fDistField =
-#if 0
       float3 (
         distance ( r, vColor_xyY ),
         distance ( g, vColor_xyY ),
         distance ( b, vColor_xyY )
       );
 
-      fDistField.x = isnan (fDistField.x) ? 0 : fDistField.x;
-      fDistField.y = isnan (fDistField.y) ? 0 : fDistField.y;
-      fDistField.z = isnan (fDistField.z) ? 0 : fDistField.z;
-#else
-    sqrt ( max ( vEpsilon3, float3 (
-      dot ( PositivePow ( (r - vColor_xyY), 2.0 ), vIdent3 ),
-      dot ( PositivePow ( (g - vColor_xyY), 2.0 ), vIdent3 ),
-      dot ( PositivePow ( (b - vColor_xyY), 2.0 ), vIdent3 )
-         )     )                   );
-#endif
+    fDistField.x = IsNan (fDistField.x) ? 0 : fDistField.x;
+    fDistField.y = IsNan (fDistField.y) ? 0 : fDistField.y;
+    fDistField.z = IsNan (fDistField.z) ? 0 : fDistField.z;
 
     bool bContained =
       SK_Triangle_ContainsPoint ( vColor_xyY,
@@ -533,7 +500,7 @@ float4 main (PS_INPUT input) : SV_TARGET
         b = SK_Color_xyY_from_RGB ( _ColorSpaces [0], float3 (0.f, 0.f, 1.f) );
 
         fColorXYZ =
-            SK_Color_xyY_from_RGB ( _ColorSpaces [0], hdr_color.rgb / input.color.xxx );
+          SK_Color_xyY_from_RGB ( _ColorSpaces [0], hdr_color.rgb );
 
         float3 vTriangle2 [] = {
           r, g, b
@@ -850,27 +817,39 @@ float4 main (PS_INPUT input) : SV_TARGET
   }
 #endif
     
-  float4 color_out =
-    float4 (
-      Clamp_scRGB (hdr_color.rgb),
-         saturate (hdr_color.a)
-           );
+  float4 color_out;
 
   // Extra clipping and gamut expansion logic for regular display output
 #ifdef INCLUDE_TEST_PATTERNS
   if (visualFunc.x == VISUALIZE_NONE)
 #endif
   {
-    color_out.r = (orig_color.r < FLT_EPSILON) ? 0.0f : color_out.r;
-    color_out.g = (orig_color.g < FLT_EPSILON) ? 0.0f : color_out.g;
-    color_out.b = (orig_color.b < FLT_EPSILON) ? 0.0f : color_out.b;
-
     if (hdrGamutExpansion > 0.0f)
     {
-      hdr_color.rgb =
-        expandGamut (hdr_color.rgb * 2.0f, hdrGamutExpansion) * 0.5f;
+      color_out.rgb =
+        expandGamut (hdr_color.rgb, hdrGamutExpansion);
     }
+
+    color_out =
+      float4 (
+        Clamp_scRGB_StripNaN (color_out.rgb),
+                    saturate (hdr_color.a)
+             );
+
+    color_out.r *= (orig_color.r >= FLT_EPSILON);
+    color_out.g *= (orig_color.g >= FLT_EPSILON);
+    color_out.b *= (orig_color.b >= FLT_EPSILON);
   }
+#ifdef INCLUDE_TEST_PATTERNS
+  else
+  {
+    color_out =
+      float4 (
+        Clamp_scRGB (hdr_color.rgb),
+           saturate (hdr_color.a)
+             );
+  }
+#endif
 
   return color_out;
 }

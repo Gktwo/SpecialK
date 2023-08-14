@@ -393,12 +393,19 @@ SK_Widget::draw_base (void)
     setVisible (visible).setAutoFit      (autofit      ).setResizable (resizable).
     setMovable (movable).setClickThrough (click_through);
 
-    ImGui::SetNextWindowSize (ImVec2 ( std::min ( max_size.x, std::max ( size.x, min_size.x ) ),
-                                       std::min ( max_size.y, std::max ( size.y, min_size.y ) ) ) );
-    ImGui::SetNextWindowPos  (pos);
+    if (visible)
+    {
+      ImGui::SetNextWindowSize (ImVec2 ( std::min ( max_size.x, std::max ( size.x, min_size.x ) ),
+                                         std::min ( max_size.y, std::max ( size.y, min_size.y ) ) ) );
+      ImGui::SetNextWindowPos  (pos);
+    }
 
     initialized.emplace (this);
   }
+
+
+  if (! visible)
+    return;
 
 
   int flags = ImGuiWindowFlags_NoTitleBar      |   ImGuiWindowFlags_NoCollapse         |
@@ -450,6 +457,10 @@ SK_Widget::draw_base (void)
                  std::max ( size.y, min_size.y ) )
                )               );
     }
+
+    ImGui::SetNextWindowSizeConstraints (
+      min_size, max_size
+    );
   }
 
 
@@ -552,9 +563,17 @@ SK_Widget::draw_base (void)
   lstrcatA (hashed_name, "##Widget_");
   lstrcatA (hashed_name, name.c_str ());
 
+  if (SK_ImGui_Active ())
+    flags &= ~ImGuiWindowFlags_NoTitleBar;
+
+  bool keep_open = true;
+
   ImGui::PushStyleVar (ImGuiStyleVar_Alpha, fAlpha);
   ImGui::Begin        ( hashed_name,
-                          nullptr, flags );
+                          &keep_open, flags );
+
+  if (! keep_open)
+    setVisible (false);
 
   ImGui::SetWindowFontScale (SK_ImGui_Widgets->scale);
 
@@ -893,6 +912,10 @@ SK_ImGui_WidgetRegistry::DispatchKeybinds ( BOOL Control,
       {
         widget->setVisible (! widget->isVisible ());
 
+        // Turn off global widget hiding if user tries to toggle any individual widget
+        if (SK_ImGui_Widgets->hide_all)
+            SK_ImGui_Widgets->hide_all = false;
+
         dispatched = TRUE;
       }
 
@@ -919,7 +942,7 @@ SK_ImGui_WidgetRegistry::DispatchKeybinds ( BOOL Control,
 
 
   static
-    std::array <SK_ConfigSerializedKeybind *, 11>
+    std::array <SK_ConfigSerializedKeybind *, 15>
         special_keys = {
           &config.screenshots.game_hud_free_keybind,
           &config.screenshots.sk_osd_free_keybind,
@@ -933,7 +956,13 @@ SK_ImGui_WidgetRegistry::DispatchKeybinds ( BOOL Control,
           &config.render.framerate.latent_sync.tearline_move_up_keybind,
           &config.render.framerate.latent_sync.tearline_move_down_keybind,
           &config.render.framerate.latent_sync.timing_resync_keybind,
-          &config.render.framerate.latent_sync.toggle_fcat_bars_keybind
+          &config.render.framerate.latent_sync.toggle_fcat_bars_keybind,
+
+          &config.sound.game_mute_keybind,
+          &config.sound.game_volume_up_keybind,
+          &config.sound.game_volume_down_keybind,
+
+          &config.widgets.hide_all_widgets_keybind
         };
 
   if ( config.render.keys.hud_toggle.masked_code == uiMaskedKeyCode )
@@ -1079,6 +1108,43 @@ SK_ImGui_WidgetRegistry::DispatchKeybinds ( BOOL Control,
       else if (  keybind == &config.render.framerate.latent_sync.toggle_fcat_bars_keybind )
       {
         SK_GetCommandProcessor ()->ProcessCommandLine ("LatentSync.ShowFCATBars toggle");
+      }
+
+      else if ( keybind == &config.sound.game_mute_keybind )
+      {
+        auto cp =
+          SK_GetCommandProcessor ();
+
+        cp->ProcessCommandLine ("Sound.Mute toggle");
+      }
+
+      else if ( keybind == &config.sound.game_volume_up_keybind )
+      {
+        auto cp =
+          SK_GetCommandProcessor ();
+
+        cp->ProcessCommandLine ("Sound.Volume ++"); cp->ProcessCommandLine ("Sound.Volume ++");
+        cp->ProcessCommandLine ("Sound.Volume ++"); cp->ProcessCommandLine ("Sound.Volume ++");
+        cp->ProcessCommandLine ("Sound.Volume ++"); cp->ProcessCommandLine ("Sound.Volume ++");
+        cp->ProcessCommandLine ("Sound.Volume ++"); cp->ProcessCommandLine ("Sound.Volume ++");
+        cp->ProcessCommandLine ("Sound.Volume ++"); cp->ProcessCommandLine ("Sound.Volume ++");
+      }
+
+      else if ( keybind == &config.sound.game_volume_down_keybind )
+      {
+        auto cp =
+          SK_GetCommandProcessor ();
+
+        cp->ProcessCommandLine ("Sound.Volume --"); cp->ProcessCommandLine ("Sound.Volume --");
+        cp->ProcessCommandLine ("Sound.Volume --"); cp->ProcessCommandLine ("Sound.Volume --");
+        cp->ProcessCommandLine ("Sound.Volume --"); cp->ProcessCommandLine ("Sound.Volume --");
+        cp->ProcessCommandLine ("Sound.Volume --"); cp->ProcessCommandLine ("Sound.Volume --");
+        cp->ProcessCommandLine ("Sound.Volume --"); cp->ProcessCommandLine ("Sound.Volume --");
+      }
+
+      else if ( keybind == &config.widgets.hide_all_widgets_keybind )
+      {
+        SK_ImGui_Widgets->hide_all = !SK_ImGui_Widgets->hide_all;
       }
 
       dispatched = TRUE;

@@ -112,6 +112,10 @@ extern SK_LazyGlobal <SK_HDR_RenderTargetManager> SK_HDR_RenderTargets_8bpc;
 extern SK_LazyGlobal <SK_HDR_RenderTargetManager> SK_HDR_RenderTargets_10bpc;
 extern SK_LazyGlobal <SK_HDR_RenderTargetManager> SK_HDR_RenderTargets_11bpc;
 
+extern SK_LazyGlobal <SK_HDR_RenderTargetManager> SK_HDR_UnorderedViews_8bpc;
+extern SK_LazyGlobal <SK_HDR_RenderTargetManager> SK_HDR_UnorderedViews_10bpc;
+extern SK_LazyGlobal <SK_HDR_RenderTargetManager> SK_HDR_UnorderedViews_11bpc;
+
 extern bool __SK_HDR_10BitSwap;
 extern bool __SK_HDR_16BitSwap;
 
@@ -150,5 +154,8 @@ SK_HDR_GetControl (void);
 bool
 SK_D3D11_SanitizeFP16RenderTargets ( ID3D11DeviceContext *pDevCtx,
                                      UINT                 dev_idx );
+
+void
+SK_D3D11_EndFrameHDR (void);
 
 #endif /*__SK__DXGI_HDR_H__*/

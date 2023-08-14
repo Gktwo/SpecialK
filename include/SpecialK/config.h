@@ -24,15 +24,18 @@
 #include <Unknwnbase.h>
 
 #include <Windows.h>
+#include <powerbase.h>
 #include <string>
 #include <set>
 #include <unordered_set>
+#include <concurrent_unordered_set.h>
 #include <concurrent_unordered_map.h>
 #include <filesystem>
 #include <intsafe.h>
 
 #include <SpecialK/render/backend.h>
 #include <SpecialK/window.h>
+#include <SpecialK/core.h>
 
 struct SK_Keybind
 {
@@ -97,6 +100,37 @@ struct sk_config_t
 
     SK_QpcFreq       = liQpcFreq.QuadPart;
     SK_QpcTicksPerMs = SK_QpcFreq / 1000LL;
+    SK_PerfFreq      = SK_QpcFreq;
+
+    PROCESSOR_POWER_INFORMATION pwi [64] = { };
+
+    // Setup TSC-based timing instead of QPC when applicable
+    //   (i.e. CPU has invariant timestamps)
+    if ( 0x0 == 
+           CallNtPowerInformation (ProcessorInformation, nullptr, 0, pwi, sizeof (pwi)) )
+    {
+      int      cpuid [4] = { };
+      __cpuid (cpuid, 0x80000007);
+
+      SK_TscFreq =
+        (1000ULL * 1000ULL * pwi [0].MaxMhz);
+
+      SK_QpcFreqInTsc = (DWORD)(SK_TscFreq / SK_QpcFreq);
+
+      SK_TscInvariant =
+        false;
+      //(cpuid [3] & (1 << 8)) != 0;
+
+      SK_PerfFreqInTsc = 1;
+
+      if (SK_TscInvariant)
+        SK_PerfFreq = SK_TscFreq;
+
+      else
+        SK_PerfFreqInTsc = SK_QpcFreqInTsc;
+    }
+
+    SK_PerfTicksPerMs = SK_PerfFreq / 1000LL;
   }
   struct whats_new_s {
     float  duration       = 20.0F;
@@ -351,11 +385,45 @@ struct sk_config_t
     bool        present               = false;  // Is the overlay detected?
   } rtss;
 
+  struct reshade_s {
+    float       overlay_luminance     = 4.375F; // 350 nits
+    bool        present               = false;  // Is the overlay detected?
+  } reshade;
+
+  struct sound_s {
+    SK_ConfigSerializedKeybind
+         game_mute_keybind = {
+      SK_Keybind {
+        "Mute the Game", L"Ctrl+Shift+Home",
+         true, true, false, VK_HOME
+      }, L"MuteGame"
+    };
+
+    SK_ConfigSerializedKeybind
+         game_volume_up_keybind = {
+      SK_Keybind {
+        "Increase Volume 10%", L"Ctrl+Shift+Insert",
+         true, true, false, VK_INSERT
+      }, L"VolumePlus10%"
+    };
+
+    SK_ConfigSerializedKeybind
+         game_volume_down_keybind = {
+      SK_Keybind {
+        "Decrease Volume 10%", L"Ctrl+Shift+Delete",
+         true, true, false, VK_DELETE
+      }, L"VolumeMinus10%"
+    };
+
+    bool         minimize_latency      = false;
+  } sound;
+
   struct screenshots_s {
-    bool        png_compress          =  true;
-    bool        show_osd_by_default   =  true;
-    bool        play_sound            =  true;
-    bool        copy_to_clipboard     =  true;
+    bool         png_compress          =  true;
+    bool         show_osd_by_default   =  true;
+    bool         play_sound            =  true;
+    bool         copy_to_clipboard     =  true;
+    std::wstring override_path         =   L"";
 
     SK_ConfigSerializedKeybind
          game_hud_free_keybind = {
@@ -416,6 +484,16 @@ struct sk_config_t
     };
   } monitors;
 
+  struct widget_s {
+    SK_ConfigSerializedKeybind
+         hide_all_widgets_keybind = {
+      SK_Keybind {
+        "Hide All Widgets", L"Ctrl+Alt+Shift+H",
+        true, true, true, 'H'
+      }, L"HideAllWidgets"
+    };
+  } widgets;
+
   struct render_s {
     struct framerate_s {
       float   target_fps          =  0.0F;
@@ -445,8 +523,16 @@ struct sk_config_t
       bool    sleepless_window    = false;
       bool    enable_mmcss        =  true;
       int     enforcement_policy  =     4; // Refer to framerate.cpp
-      bool    auto_low_latency    =  true; // VRR users have the limiter default to low-latency
+      struct {
+        bool  waiting             =  true; // VRR users have the limiter default to low-latency
+        bool  triggered           = false; // The limiter was VRR-optimized once
+        struct {
+         bool ultra_low_latency   = false; // VRR auto-optimization goes further (potential stutter)
+         bool global_opt          =  true; // Opt-In for Auto Low Latency as default policy
+        } policy;
+      } auto_low_latency;
       bool    enable_etw_tracing  =  true;
+      bool    supports_etw_trace  = false;// Not stored in config file
       struct latent_sync_s {
         SK_ConfigSerializedKeybind
           tearline_move_up_keybind = {
@@ -479,7 +565,6 @@ struct sk_config_t
         int   scanline_offset      =    -1;
         int   scanline_resync      =   750;
         int   scanline_error       =     1;
-        bool  adaptive_sync        =  true;
         float delay_bias           =  0.0f;
         bool  show_fcat_bars       = false; // Not INI-persistent
 
@@ -489,6 +574,7 @@ struct sk_config_t
         bool flush_after_present   = false;
         bool finish_after_present  = true;
       } latent_sync;
+      bool    use_amd_mwaitx       = true;
     } framerate;
     struct d3d9_s {
       bool    force_d3d9ex         = false;
@@ -535,14 +621,24 @@ struct sk_config_t
       bool    present_test_skip    = false;
       bool    hide_hdr_support     = false; // Games won't know HDR is supported
       bool    use_factory_cache    =  true; // Fix performance issues in Resident Evil 8
-      bool    skip_mode_changes    = false; // Try to skip rendundant resolution changes
+      bool    skip_mode_changes    =  true; // Try to skip rendundant resolution changes
       bool    temporary_dwm_hdr    = false; // Always turns HDR on and off for this game
       bool    disable_virtual_vbi  =  true; // Disable Windows 11 Dynamic Refresh Rate
       bool    ignore_thread_flags  = false; // Remove threading flags from D3D11 devices
       bool    clear_flipped_chain  =  true; // Clear buffers on present? (non-compliant)
       float   chain_clear_color[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
       bool    suppress_resize_fail =  true; // Workaround EOS Overlay bug in D3D12
+      bool    suppress_rtv_mismatch= false; // Hide SwapChain RTV format warnings for buggy games
+      float   warn_if_vram_exceeds =  95.f; // Warn if VRAM usage exceeds % of available
+      bool    warned_low_vram      = false; // NOT SAVED: State of warn_if_vram_exceeds
     } dxgi;
+
+    struct {
+      bool    disable_bypass_io    = false;
+      bool    disable_telemetry    = false;
+      bool    disable_gpu_decomp   = false;
+      bool    force_file_buffering = false;
+    } dstorage;
 
     struct {
       bool    disable_fullscreen   = true;
@@ -588,12 +684,13 @@ struct sk_config_t
     int       monitor_idx          =     0;
     HMONITOR  monitor_handle       =     0;
     int       monitor_default      = MONITOR_DEFAULTTONEAREST;
-    float     refresh_rate         =  0.0F; // TODO
+    float     refresh_rate         =  0.0F;
     bool      force_fullscreen     = false;
     bool      force_windowed       = false;
     bool      aspect_ratio_stretch = false;
     bool      confirm_mode_changes = true;
     bool      save_monitor_prefs   = true;
+    bool      warn_no_mpo_planes   = false;
     struct resolution_s {
       bool           save          = true;
       bool           applied       = false;
@@ -674,15 +771,19 @@ struct sk_config_t
       bool    kill_hdr            = false;
       bool    snuffed_ansel       = false;
       bool    bypass_ansel        =  true;
+      bool    allow_dlss_g        = false;
+      bool    auto_delete_dlss_g  = false;
     } bugs;
-    struct sleep_s {
+    struct reflex_s {
       UINT    frame_interval_us   =      0;
       int     enforcement_site    =      1;
       bool    low_latency         =  false;
       bool    low_latency_boost   =  false;
       bool    marker_optimization =  false;
       bool    enable              =  false;
-    } sleep;
+      bool    native              =  false;
+      bool    override            =  false;
+    } reflex;
   } nvidia;
 
   struct input_s {
@@ -695,7 +796,7 @@ struct sk_config_t
     struct ui_s {
       union {
         bool  capture             = false;
-        bool  capture_mouse;
+        bool  capture_mouse;      // Unconditionally capture the mouse (i.e. block it)
       };
       bool    capture_hidden      = false; // Capture mouse if HW cursor is not visible
       bool    capture_keyboard    = false;
@@ -716,6 +817,7 @@ struct sk_config_t
       bool    hook_hid            = true;
       bool    hook_xinput         = true; // Kind of important ;)
       bool    hook_scepad         = true;
+      bool    hook_raw_input      = true;
       bool    native_ps4          = false;
 
       struct xinput_s {
@@ -724,9 +826,18 @@ struct sk_config_t
         bool  placehold  [4]      = { false };
         unsigned
         int   assignment [4]      = { 0, 1, 2, 3 };
+        bool  disable    [4]      = { false };
         bool  hook_setstate       =  true; // Some software causes feedback loops
         bool  auto_slot_assign    = false;
+        bool  blackout_api        = false;
       } xinput;
+
+      struct dinput_s {
+        bool  blackout_gamepads   = false;
+        bool  blackout_keyboards  = false;
+        bool  blackout_mice       = false;
+        bool  block_enum_devices  = false;
+      } dinput;
 
       struct scepad_s {
         bool disable_touch        = false;
@@ -818,6 +929,7 @@ struct sk_config_t
     bool    disable_screensaver = false;
     bool    treat_fg_as_active  = false; // Compat. hack for NiNoKuni 2
     bool    dont_hook_wndproc   = false;
+    bool    activate_at_start   = false;
     struct resolution_s {
       struct dim_override_s {
         unsigned int x          = 0;
@@ -843,9 +955,10 @@ struct sk_config_t
     bool     impersonate_debugger     = false; // Can disable games' crash handlers
     bool     disable_debug_features   = false;
     bool     using_wine               = false;
-    bool     allow_dxdiagn            = false;
+    bool     allow_dxdiagn            =  true; // Slows game launches way down
     bool     auto_large_address_patch =  true;
     bool     init_on_separate_thread  =  true;
+    bool     shutdown_on_window_close = false;
   } compatibility;
 
   struct apis_s {
@@ -861,8 +974,9 @@ struct sk_config_t
 #endif
 
     struct d3d9_s {
-      bool   hook       = true;
-      bool   translated = false;
+      bool   hook        =  true;
+      bool   translated  = false;
+      int    native_dxvk =    -1;
     } d3d9,
       d3d9ex;
 
@@ -880,16 +994,21 @@ struct sk_config_t
       OpenGL;
 
     struct NvAPI_s {
-      bool         enable       = true;
-      bool         gsync_status = true;
-      bool         disable_hdr  = false;
-      std::wstring bpc_enum     = L"NV_BPC_DEFAULT";
-      std::wstring col_fmt_enum = L"NV_COLOR_FORMAT_AUTO";
+      bool         enable        = true;
+      bool         gsync_status  = true;
+      bool         disable_hdr   = false;
+      int          vulkan_bridge = -1;
+      std::wstring bpc_enum      = L"NV_BPC_DEFAULT";
+      std::wstring col_fmt_enum  = L"NV_COLOR_FORMAT_AUTO";
     } NvAPI;
 
     struct ADL_s {
       bool   enable            = true;
     } ADL;
+
+    struct D3DKMT_s {
+      bool   enable_perfdata  = true;
+    } D3DKMT;
 
     SK_RenderAPI last_known    = SK_RenderAPI::Reserved;
   } apis;
@@ -908,12 +1027,12 @@ struct sk_config_t
     bool    strict_compliance   = false;
     bool    silent              = false;
     bool    handle_crashes      =  true;
+    bool    silent_crash        = false;
     bool    suppress_crashes    = false;
     bool    prefer_fahrenheit   = false;
     bool    display_debug_out   = false;
     bool    game_output         =  true;
     bool    central_repository  = false;
-    bool    ignore_rtss_delay   = false;
     bool    wait_for_debugger   = false;
     bool    return_to_skif      = false;
   } system;
@@ -923,6 +1042,7 @@ struct sk_config_t
     bool    raise_bg            = false;
     bool    raise_fg            =  true;
     bool    deny_foreign_change =  true;
+    int     minimum_render_prio = THREAD_PRIORITY_ABOVE_NORMAL;
   } priority;
 
   struct skif_s {
@@ -1162,6 +1282,7 @@ enum class SK_GAME_ID
   DisgaeaPC,                    // dis1_st.exe
   SecretOfMana,                 // Secret_of_Mana.exe
   FinalFantasyXV,               // ffxv*.exe
+  FinalFantasyXIV,              // ffxiv_dx11.exe
   DragonBallFighterZ,           // DBFighterZ.exe
   NiNoKuni2,                    // Nino2.exe
   FarCry5,                      // FarCry5.exe
@@ -1200,6 +1321,8 @@ enum class SK_GAME_ID
   FarCry6,                      // FarCry6.exe
   Ryujinx,                      // Ryujinx.exe
   yuzu,                         // yuzu.exe
+  cemu,                         // cemu.exe
+  RPCS3,                        // rpcs3.exe
   ForzaHorizon5,                // ForzaHorizon5.exe
   HaloInfinite,                 // HaloInfinite.exe
   FinalFantasy7Remake,          // ff7remake*.exe
@@ -1218,6 +1341,10 @@ enum class SK_GAME_ID
   SoulHackers2,                 // SOUL HACKERS2.exe
   MegaManBattleNetwork,         // MMBN_LC2.exe, MMBN_LC1.exe
   HonkaiStarRail,               // StarRail.exe
+  NoMansSky,                    // NMS.exe
+  DiabloIV,                     // Diablo IV.exe
+  CallOfDuty,                   // CoDSP.exe, CoDMP.exe (???)
+  RatchetAndClank_RiftApart,    // RiftApart.exe
 
   UNKNOWN_GAME               = 0xffff
 };

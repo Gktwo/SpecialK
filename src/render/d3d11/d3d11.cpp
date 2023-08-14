@@ -284,6 +284,15 @@ extern HRESULT
                             _In_ INT                   BaseVertexLocation,
                             _In_ D3D11_DrawIndexed_pfn pfnD3D11DrawIndexed );
 
+extern HRESULT
+  SK_D3D11_Inject_ReShadeHDR ( _In_ ID3D11DeviceContext           *pDevCtx,
+                               _In_ UINT                           IndexCountPerInstance,
+                               _In_ UINT                           InstanceCount,
+                               _In_ UINT                           StartIndexLocation,
+                               _In_ INT                            BaseVertexLocation,
+                               _In_ UINT                           StartInstanceLocation,
+                               _In_ D3D11_DrawIndexedInstanced_pfn pfnD3D11DrawIndexedInstanced );
+
 extern bool SK_D3D11_ShowShaderModDlg (void);
 
 LPVOID pfnD3D11CreateDevice             = nullptr;
@@ -299,11 +308,6 @@ static SK_LazyGlobal <
 Concurrency::concurrent_unordered_map
 <                  ID3D11DeviceContext *,
   SK_ComPtr       <ID3D11DeviceContext4> > > wrapped_contexts;
-
-static SK_LazyGlobal <
-Concurrency::concurrent_unordered_map
-<                  ID3D11Device         *,
-  SK_ComPtr       <ID3D11DeviceContext4> > > wrapped_immediates;
 
 #pragma data_seg (".SK_D3D11_Hooks")
 extern "C"
@@ -698,6 +702,42 @@ SK_D3D11_DispatchContextResetQueue (UINT dev_ctx)
   }
 
   return false;
+}
+
+BOOL
+SK_D3D11_SetWrappedImmediateContext ( ID3D11Device        *pDev,
+                                      ID3D11DeviceContext *pDevCtx )
+{
+  if ( FAILED (
+         pDev->SetPrivateDataInterface ( SKID_D3D11WrappedImmediateContext,
+                                           pDevCtx )
+       )
+     )
+  {
+    return FALSE;
+  }
+
+  return TRUE;
+}
+
+ID3D11DeviceContext*
+SK_D3D11_GetWrappedImmediateContext ( ID3D11Device *pDev )
+{
+  if (pDev == nullptr) return nullptr;
+
+  ID3D11DeviceContext *pDevCtx = nullptr;
+  UINT                    size = sizeof (ID3D11DeviceContext *);
+
+  if ( SUCCEEDED (
+         pDev->GetPrivateData ( SKID_D3D11WrappedImmediateContext, &size,
+                                  (void **)&pDevCtx )
+       )
+     )
+  {
+    return pDevCtx;
+  }
+
+  return nullptr;
 }
 
 int SK_D3D11_AllocatedDevContexts = 0;
@@ -1247,9 +1287,29 @@ SK_D3D11Dev_CreateRenderTargetView_Impl (
                 {
                   if (pDesc != nullptr)
                   {
-                    SK_RunOnce (
-                      SK_ImGui_Warning (L"Incompatible SwapChain RTV Format Requested")
-                    );
+                    if ( DirectX::IsSRGB       (                       desc.Format) &&
+                         DirectX::MakeTypeless (                       desc.Format) !=
+                         DirectX::MakeTypeless (DirectX::MakeSRGB (tex_desc.Format))
+                           &&  DXGI_FORMAT_R10G10B10A2_TYPELESS == tex_desc.Format )
+                    {
+                      SK_RunOnce (
+                        SK_ImGui_Warning (L"10-bit SDR is not possible in this game because it uses sRGB gamma.")
+                      );
+                    }
+
+                    else
+                    {
+                      if (! config.render.dxgi.suppress_rtv_mismatch)
+                      {
+                        SK_RunOnce (
+                          SK_ImGui_Warning (
+                            SK_FormatStringW (L"Incompatible SwapChain RTV Format Requested: %hs = %hs ??",
+                                             SK_DXGI_FormatToStr (    desc.Format).data (),
+                                             SK_DXGI_FormatToStr (tex_desc.Format).data ()).c_str ()
+                                           )
+                                   );
+                      }
+                    }
                   }
 
                   desc.Format = internalSwapChainFormat;
@@ -1339,14 +1399,21 @@ SK_D3D11_UpdateSubresource_Impl (
     pDstResource->GetDevice (&pResourceDevice.p);
     if (! SK_D3D11_EnsureMatchingDevices (pDevCtx, pResourceDevice))
     {
-      if (pDevCtx->GetType () == D3D11_DEVICE_CONTEXT_IMMEDIATE)
-      {
-        pResourceDevice->GetImmediateContext (&pDevCtx);
-        _Finish ();                            pDevCtx->Release ();
-      }
+      SK_RunOnce (
+        SK_LOGi0 (L"UpdateSubresource (...) called on a resource belonging "
+                  L"to a different device")
+      );
 
-      else
-        return;
+      if (bWrapped)
+      {
+        if (pDevCtx->GetType () == D3D11_DEVICE_CONTEXT_IMMEDIATE)
+        {
+          pResourceDevice->GetImmediateContext (&pDevCtx);
+          _Finish ();                            pDevCtx->Release ();
+
+          return;
+        }
+      }
     }
   }
 
@@ -1354,8 +1421,8 @@ SK_D3D11_UpdateSubresource_Impl (
   //  _Finish ();
 
   bool early_out =
-    ( SK_D3D11_IgnoreWrappedOrDeferred (bWrapped, pDevCtx) ||
-    (! bMustNotIgnore) );
+    (! bMustNotIgnore) ||
+    SK_D3D11_IgnoreWrappedOrDeferred (bWrapped, bIsDevCtxDeferred, pDevCtx);
 
   SK_TLS *pTLS = nullptr;
 
@@ -1704,8 +1771,8 @@ SK_D3D11_IsDirectCopyCompatible (DXGI_FORMAT src, DXGI_FORMAT dst)
                                   DirectX::MakeSRGB (src) == dst ||
                                   DirectX::MakeSRGB (dst) == src ||
       (DirectX::MakeTypeless (src) == DirectX::MakeTypeless (dst)
-                                   &&
-      (DirectX::IsTypeless   (src) || DirectX::IsTypeless   (dst)))
+                               /*&&
+      (DirectX::IsTypeless (src) || DirectX::IsTypeless (dst))*/)
      )
   {
     return true;
@@ -1829,10 +1896,12 @@ SK_D3D11_CopySubresourceRegion_Impl (
 
               // No dimension mismatches allowed
               SK_ReleaseAssert ( pSrcBox == nullptr ||
-                                (pSrcBox->left   == 0             &&
-                                 pSrcBox->top    == 0             &&
-                                 pSrcBox->right  == srcDesc.Width &&
-                                 pSrcBox->bottom == srcDesc.Height) );
+                                // We can scissor this to implement the copy,
+                                // but only if the dimensions are sane...
+                                (pSrcBox->left   >= 0             &&
+                                 pSrcBox->top    >= 0             &&
+                                 pSrcBox->right  <= srcDesc.Width &&
+                                 pSrcBox->bottom <= srcDesc.Height) );
 
               SK_RunOnce (
                 SK_LOGi0 (
@@ -1845,10 +1914,7 @@ SK_D3D11_CopySubresourceRegion_Impl (
               // NOTE: This does not replicate the actual -sub- region part of the
               //         API and will probably break things if it's ever relied on.
 
-              extern bool SK_D3D11_BltCopySurface ( ID3D11Texture2D* pSrcTex,
-                                                    ID3D11Texture2D* pDstTex );
-
-              if (SK_D3D11_BltCopySurface (pSrcTex, pDstTex))
+              if (SK_D3D11_BltCopySurface (pSrcTex, pDstTex, pSrcBox))
                 return;
             }
           }
@@ -1865,8 +1931,8 @@ SK_D3D11_CopySubresourceRegion_Impl (
   };
 
   bool early_out =
-    ( SK_D3D11_IgnoreWrappedOrDeferred (bWrapped, pDevCtx) ||
-    (! bMustNotIgnore) );
+    (! bMustNotIgnore) ||
+    SK_D3D11_IgnoreWrappedOrDeferred (bWrapped, bIsDevCtxDeferred, pDevCtx);
 
   if (early_out)
   {
@@ -2302,9 +2368,6 @@ SK_D3D11_CopyResource_Impl (
                FAILED (SK_D3D11_CheckResourceFormatManipulation (pDstTex, dstDesc.Format)) ||
                FAILED (SK_D3D11_CheckResourceFormatManipulation (pSrcTex, srcDesc.Format)) )
           {
-            extern bool SK_D3D11_BltCopySurface ( ID3D11Texture2D* pSrcTex,
-                                                  ID3D11Texture2D* pDstTex );
-
             if ( srcDesc.Width  != dstDesc.Width ||
                  srcDesc.Height != dstDesc.Height )
             {
@@ -2317,8 +2380,14 @@ SK_D3D11_CopyResource_Impl (
 
             if (srcDesc.MipLevels == dstDesc.MipLevels)
             {
-              if (SK_D3D11_BltCopySurface (pSrcTex, pDstTex))
-                return;
+              // TODO: Add config parameter to handle games that try to copy resources
+              //         with incompatible dimensions (i.e. Total War Warhammer III)
+              //if ( srcDesc.Width  == dstDesc.Width &&
+              //     srcDesc.Height == dstDesc.Height )
+              {
+                if (SK_D3D11_BltCopySurface (pSrcTex, pDstTex))
+                  return;
+              }
             }
 
             else SK_ReleaseAssert (srcDesc.MipLevels == dstDesc.MipLevels);
@@ -2334,8 +2403,8 @@ SK_D3D11_CopyResource_Impl (
   };
 
   bool early_out =
-    ( SK_D3D11_IgnoreWrappedOrDeferred (bWrapped, pDevCtx) ||
-    (! bMustNotIgnore) );
+    (! bMustNotIgnore) ||
+    SK_D3D11_IgnoreWrappedOrDeferred (bWrapped, bIsDevCtxDeferred, pDevCtx);
 
   if (early_out)
   {
@@ -3842,25 +3911,22 @@ DEFINE_GUID(IID_ID3D11On12Device,0x85611e73,0x70a9,0x490e,0x96,0x14,0xa9,0xe3,0x
 
 bool
 SK_D3D11_IgnoreWrappedOrDeferred ( bool                 bWrapped,
+                                   bool                 bDeferred,
                                    ID3D11DeviceContext* pDevCtx )
 {
-         const bool  bDeferred  =   SK_D3D11_IsDevCtxDeferred (pDevCtx);
-  static const bool& bIsolation = config.render.dxgi.deferred_isolation;
-
-  if (  (  bDeferred  && (! bIsolation) ) ||
-      ( (! bDeferred) && (  bWrapped  )
-                      && (! bIsolation) )
-     )
+  if (!config.render.dxgi.deferred_isolation) [[likely]]
   {
-    return
-      true;
-  }
+    if (bWrapped) [[likely]]
+      return true;
 
+    if (bDeferred) [[unlikely]]
+      return true;
+  }
 
   static auto& rb =
     SK_GetCurrentRenderBackend ();
 
-  if ((! bWrapped) && pDevCtx != rb.d3d11.immediate_ctx)
+  if ((! bWrapped) && pDevCtx != rb.d3d11.immediate_ctx) [[unlikely]]
   {
     if ( rb.d3d11.immediate_ctx == nullptr ||
          rb.device.p            == nullptr )
@@ -3881,12 +3947,15 @@ SK_D3D11_IgnoreWrappedOrDeferred ( bool                 bWrapped,
     //if (! rb.getDevice <ID3D11Device> ().IsEqualObject (pDevice))
     if (rb.device.p != pDevice.p)
     {
-      if (config.system.log_level > 2)
+      if (! SK_D3D11_EnsureMatchingDevices ((ID3D11Device *)rb.device.p, pDevice.p))
       {
-        SK_ReleaseAssert (!"Hooked command ignored because it happened on the wrong device");
-      }
+        if (config.system.log_level > 2)
+        {
+          SK_ReleaseAssert (!"Hooked command ignored because it happened on the wrong device");
+        }
 
-      return true;
+        return true;
+      }
     }
   }
 
@@ -3949,8 +4018,8 @@ SK_D3D11_Dispatch_Impl (
     };
 
   bool early_out =
-    ( SK_D3D11_IgnoreWrappedOrDeferred (bWrapped, pDevCtx) ||
-    (! bMustNotIgnore) );
+    (! bMustNotIgnore) ||
+    SK_D3D11_IgnoreWrappedOrDeferred (bWrapped, bIsDevCtxDeferred, pDevCtx);
 
   if (early_out)
   {
@@ -4006,8 +4075,8 @@ SK_D3D11_DispatchIndirect_Impl (
    };
 
   bool early_out =
-    ( SK_D3D11_IgnoreWrappedOrDeferred (bWrapped, pDevCtx) ||
-    (! bMustNotIgnore) );
+    (! bMustNotIgnore) ||
+    SK_D3D11_IgnoreWrappedOrDeferred (bWrapped, bIsDevCtxDeferred, pDevCtx);
 
   if (early_out)
   {
@@ -4050,8 +4119,9 @@ SK_D3D11_DrawAuto_Impl (_In_ ID3D11DeviceContext *pDevCtx, BOOL bWrapped, UINT d
    };
 
   bool early_out =
-    ( SK_D3D11_IgnoreWrappedOrDeferred (bWrapped, pDevCtx) ||
-    (! bMustNotIgnore) );
+    (! bMustNotIgnore) ||
+    SK_D3D11_IgnoreWrappedOrDeferred (bWrapped, bIsDevCtxDeferred, pDevCtx);
+    
 
   if (early_out)
   {
@@ -4203,8 +4273,9 @@ SK_D3D11_Draw_Impl (ID3D11DeviceContext* pDevCtx,
 
 
   bool early_out =
-    ( SK_D3D11_IgnoreWrappedOrDeferred (bWrapped, pDevCtx) ||
-    (! bMustNotIgnore) );
+    (! bMustNotIgnore) ||
+    SK_D3D11_IgnoreWrappedOrDeferred (bWrapped, bIsDevCtxDeferred, pDevCtx);
+    
 
   if (early_out)
   {
@@ -4383,8 +4454,8 @@ SK_D3D11_DrawIndexed_Impl (
     };
 
   bool early_out =
-    ( SK_D3D11_IgnoreWrappedOrDeferred (bWrapped, pDevCtx) ||
-    (! bMustNotIgnore) );
+    (! bMustNotIgnore) ||
+    SK_D3D11_IgnoreWrappedOrDeferred (bWrapped, bIsDevCtxDeferred, pDevCtx);
 
   if (early_out)
   {
@@ -4430,8 +4501,9 @@ SK_D3D11_DrawIndexed_Impl (
   if ( rb.isHDRCapable ()  &&
        rb.isHDRActive  () )
   {
-#define EPIC_OVERLAY_VS_CRC32C  0xa7ee5199
-#define UPLAY_OVERLAY_PS_CRC32C 0x35ae281c
+#define EPIC_OVERLAY_VS_CRC32C    0xa7ee5199
+#define UPLAY_OVERLAY_PS_CRC32C   0x35ae281c
+#define RESHADE_OVERLAY_VS_CRC32C 0xe944408b
 
     if (dev_idx == UINT_MAX)
     {
@@ -4453,19 +4525,25 @@ SK_D3D11_DrawIndexed_Impl (
         return;
       }
     }
-    
-    else if ( EPIC_OVERLAY_VS_CRC32C ==
-                shaders.vertex.current.shader [dev_idx] )
+
+    else
     {
-      if ( SUCCEEDED (
-             SK_D3D11_Inject_EpicHDR ( pDevCtx, IndexCount,
-                                         StartIndexLocation,
-                                           BaseVertexLocation,
-                                             D3D11_DrawIndexed_Original )
-           )
-         )
+      switch (shaders.vertex.current.shader [dev_idx])
       {
-        return;
+        case EPIC_OVERLAY_VS_CRC32C:
+          if ( SUCCEEDED (
+                 SK_D3D11_Inject_EpicHDR ( pDevCtx, IndexCount,
+                                             StartIndexLocation,
+                                               BaseVertexLocation,
+                                                 D3D11_DrawIndexed_Original )
+               )
+             )
+          {
+            return;
+          }
+          break;
+        default:
+          break;
       }
     }
   }
@@ -4518,13 +4596,50 @@ SK_D3D11_DrawIndexedInstanced_Impl (
     };
 
   bool early_out =
-    ( SK_D3D11_IgnoreWrappedOrDeferred (bWrapped, pDevCtx) ||
-    (! bMustNotIgnore) );
+    (! bMustNotIgnore) ||
+    SK_D3D11_IgnoreWrappedOrDeferred (bWrapped, bIsDevCtxDeferred, pDevCtx);
 
   if (early_out)
   {
     return
       _Finish ();
+  }
+
+  static auto& rb =
+    SK_GetCurrentRenderBackend ();
+
+  //------
+
+  // Render-state tracking needs to be forced-on for the
+  //   ReShade Overlay HDR fix to work.
+  if ( rb.isHDRCapable ()  &&
+       rb.isHDRActive  () )
+  {
+#define RESHADE_OVERLAY_VS_CRC32C 0xe944408b
+
+    if (dev_idx == UINT_MAX)
+    {
+      dev_idx =
+        SK_D3D11_GetDeviceContextHandle (pDevCtx);
+    }
+
+    switch (SK_D3D11_Shaders->vertex.current.shader [dev_idx])
+    {
+      case RESHADE_OVERLAY_VS_CRC32C:
+        if ( SUCCEEDED (
+               SK_D3D11_Inject_ReShadeHDR ( pDevCtx, IndexCountPerInstance,
+                                              InstanceCount, StartIndexLocation,
+                                                BaseVertexLocation, StartInstanceLocation,
+                                                  D3D11_DrawIndexedInstanced_Original )
+             )
+           )
+        {
+          return;
+        }
+        break;
+      default:
+        break;
+    }
   }
 
   if (! SK_D3D11_ShouldTrackDrawCall (pDevCtx, SK_D3D11DrawType::IndexedInstanced))
@@ -4571,8 +4686,8 @@ SK_D3D11_DrawIndexedInstancedIndirect_Impl (
    };
 
   bool early_out =
-    ( SK_D3D11_IgnoreWrappedOrDeferred (bWrapped, pDevCtx) ||
-    (! bMustNotIgnore) );
+    (! bMustNotIgnore) ||
+    SK_D3D11_IgnoreWrappedOrDeferred (bWrapped, bIsDevCtxDeferred, pDevCtx);
 
   if (early_out)
   {
@@ -4628,8 +4743,8 @@ SK_D3D11_DrawInstanced_Impl (
    };
 
   bool early_out =
-    ( SK_D3D11_IgnoreWrappedOrDeferred (bWrapped, pDevCtx) ||
-    (! bMustNotIgnore) );
+    (! bMustNotIgnore) ||
+    SK_D3D11_IgnoreWrappedOrDeferred (bWrapped, bIsDevCtxDeferred, pDevCtx);
 
   if (early_out)
   {
@@ -4680,8 +4795,8 @@ SK_D3D11_DrawInstancedIndirect_Impl (
    };
 
   bool early_out =
-    ( SK_D3D11_IgnoreWrappedOrDeferred (bWrapped, pDevCtx) ||
-    (! bMustNotIgnore) );
+    (! bMustNotIgnore) ||
+    SK_D3D11_IgnoreWrappedOrDeferred (bWrapped, bIsDevCtxDeferred, pDevCtx);
 
   if (early_out)
   {
@@ -4757,8 +4872,8 @@ SK_D3D11_OMSetRenderTargetsAndUnorderedAccessViews_Impl (
   };
 
   bool early_out =
-    ( SK_D3D11_IgnoreWrappedOrDeferred (bWrapped, pDevCtx) ||
-    (! bMustNotIgnore) );
+    (! bMustNotIgnore) ||
+    SK_D3D11_IgnoreWrappedOrDeferred (bWrapped, bIsDevCtxDeferred, pDevCtx);
 
   if (early_out)
   {
@@ -4895,8 +5010,8 @@ _In_opt_ ID3D11DepthStencilView        *pDepthStencilView,
   };
 
   bool early_out =
-    ( SK_D3D11_IgnoreWrappedOrDeferred (bWrapped, pDevCtx) ||
-    (! bMustNotIgnore) );
+    (! bMustNotIgnore) ||
+    SK_D3D11_IgnoreWrappedOrDeferred (bWrapped, bIsDevCtxDeferred, pDevCtx);
 
   if (early_out)
   {
@@ -5281,6 +5396,8 @@ D3D11Dev_CreateTexture2D_Impl (
                    ( pInitialData          == nullptr ||
                      pInitialData->pSysMem == nullptr ) )
   {
+    extern bool SK_HDR_PromoteUAVsTo16Bit;
+
     static constexpr UINT _UnwantedFlags =
         ( D3D11_BIND_VERTEX_BUFFER   | D3D11_BIND_INDEX_BUFFER     |
           D3D11_BIND_CONSTANT_BUFFER | D3D11_BIND_STREAM_OUTPUT    |
@@ -5308,6 +5425,20 @@ D3D11Dev_CreateTexture2D_Impl (
                 SK_DXGI_IsFormatInteger (pDesc->Format) ) )
          )
       {
+        bool is_uav =
+          (pDesc->BindFlags & D3D11_BIND_UNORDERED_ACCESS) ==
+                              D3D11_BIND_UNORDERED_ACCESS;
+
+        SK_HDR_RenderTargetManager *p11BitTargetManager =
+          is_uav ? SK_HDR_UnorderedViews_11bpc.getPtr ()
+                 : SK_HDR_RenderTargets_11bpc. getPtr (),
+                                   *p10BitTargetManager =
+          is_uav ? SK_HDR_UnorderedViews_10bpc.getPtr ()
+                 : SK_HDR_RenderTargets_10bpc. getPtr (),
+                                   *p8BitTargetManager =
+          is_uav ? SK_HDR_UnorderedViews_8bpc.getPtr ()
+                 : SK_HDR_RenderTargets_8bpc. getPtr ();
+
         static const bool bTalesOfArise =
           SK_GetCurrentGameID () == SK_GAME_ID::Tales_of_Arise;
 
@@ -5341,26 +5472,26 @@ D3D11Dev_CreateTexture2D_Impl (
             DirectX::BitsPerColor (pDesc->Format);
 
           if (     bpc == 11)
-            InterlockedIncrement (&SK_HDR_RenderTargets_11bpc->CandidatesSeen);
+            InterlockedIncrement (&p11BitTargetManager->CandidatesSeen);
           else if (bpc == 10)
-            InterlockedIncrement (&SK_HDR_RenderTargets_10bpc->CandidatesSeen);
+            InterlockedIncrement (&p10BitTargetManager->CandidatesSeen);
 
           // 11-bit FP (or 10-bit fixed?) -> 16-bit FP
-          if ( (SK_HDR_RenderTargets_11bpc->PromoteTo16Bit && bpc == 11) ||
-               (SK_HDR_RenderTargets_10bpc->PromoteTo16Bit && bpc == 10) )
+          if ( (p10BitTargetManager->PromoteTo16Bit && bpc == 10) ||
+               (p11BitTargetManager->PromoteTo16Bit && bpc == 11) )
           {
             // 32-bit total -> 64-bit
             SK_ReleaseAssert (bpp == 32);
 
             if (bpc == 11)
             {
-              InterlockedAdd64     (&SK_HDR_RenderTargets_11bpc->BytesAllocated, 4LL * pDesc->Width * pDesc->Height);
-              InterlockedIncrement (&SK_HDR_RenderTargets_11bpc->TargetsUpgraded);
+              InterlockedAdd64     (&p11BitTargetManager->BytesAllocated, 4LL * pDesc->Width * pDesc->Height);
+              InterlockedIncrement (&p11BitTargetManager->TargetsUpgraded);
             }
             else if (bpc == 10)
             {
-              InterlockedAdd64     (&SK_HDR_RenderTargets_10bpc->BytesAllocated, 4LL * pDesc->Width * pDesc->Height);
-              InterlockedIncrement (&SK_HDR_RenderTargets_10bpc->TargetsUpgraded);
+              InterlockedAdd64     (&p10BitTargetManager->BytesAllocated, 4LL * pDesc->Width * pDesc->Height);
+              InterlockedIncrement (&p10BitTargetManager->TargetsUpgraded);
             }
 
             if (config.system.log_level > 4)
@@ -5401,7 +5532,7 @@ D3D11Dev_CreateTexture2D_Impl (
                     pDesc->Height == swapDesc.BufferDesc.Height )
                  )
               {
-                if (SK_HDR_RenderTargets_8bpc->PromoteTo16Bit)
+                if (p8BitTargetManager->PromoteTo16Bit)
                 {
                   if (config.system.log_level > 4)
                   {
@@ -5411,19 +5542,19 @@ D3D11Dev_CreateTexture2D_Impl (
                   }
 
                   // 32-bit total -> 64-bit
-                  InterlockedAdd64     (&SK_HDR_RenderTargets_8bpc->BytesAllocated, 4LL * pDesc->Width * pDesc->Height);
-                  InterlockedIncrement (&SK_HDR_RenderTargets_8bpc->TargetsUpgraded);
+                  InterlockedAdd64     (&p8BitTargetManager->BytesAllocated, 4LL * pDesc->Width * pDesc->Height);
+                  InterlockedIncrement (&p8BitTargetManager->TargetsUpgraded);
 
                   //if (     _typeless == DXGI_FORMAT_R8G8_TYPELESS)
                   //  pDesc->Format     = DXGI_FORMAT_R16G16_FLOAT;
                   //else if (_typeless == DXGI_FORMAT_R8_TYPELESS)
                   //  pDesc->Format     = DXGI_FORMAT_R16_FLOAT;
                   //else
-                    pDesc->Format = hdr_fmt_override;
+                  pDesc->Format = hdr_fmt_override;
                   bManipulated  = true;
                 }
 
-                InterlockedIncrement (&SK_HDR_RenderTargets_8bpc->CandidatesSeen);
+                InterlockedIncrement (&p8BitTargetManager->CandidatesSeen);
               }
             }
           }
@@ -6213,46 +6344,47 @@ SK_D3D11_Init (void)
     CreateDirect3D11SurfaceFromDXGISurface = SK_GetProcAddress (SK::DXGI::hModD3D11, "CreateDirect3D11SurfaceFromDXGISurface");
     D3D11On12CreateDevice                  =
                   (D3D11On12CreateDevice_pfn)SK_GetProcAddress (SK::DXGI::hModD3D11, "D3D11On12CreateDevice");
-    D3DKMTCloseAdapter                     = SK_GetProcAddress (SK::DXGI::hModD3D11, "D3DKMTCloseAdapter");
-    D3DKMTDestroyAllocation                = SK_GetProcAddress (SK::DXGI::hModD3D11, "D3DKMTDestroyAllocation");
-    D3DKMTDestroyContext                   = SK_GetProcAddress (SK::DXGI::hModD3D11, "D3DKMTDestroyContext");
-    D3DKMTDestroyDevice                    = SK_GetProcAddress (SK::DXGI::hModD3D11, "D3DKMTDestroyDevice ");
-    D3DKMTDestroySynchronizationObject     = SK_GetProcAddress (SK::DXGI::hModD3D11, "D3DKMTDestroySynchronizationObject");
-    D3DKMTQueryAdapterInfo                 = SK_GetProcAddress (SK::DXGI::hModD3D11, "D3DKMTQueryAdapterInfo");
-    D3DKMTSetDisplayPrivateDriverFormat    = SK_GetProcAddress (SK::DXGI::hModD3D11, "D3DKMTSetDisplayPrivateDriverFormat");
-    D3DKMTSignalSynchronizationObject      = SK_GetProcAddress (SK::DXGI::hModD3D11, "D3DKMTSignalSynchronizationObject");
-    D3DKMTUnlock                           = SK_GetProcAddress (SK::DXGI::hModD3D11, "D3DKMTUnlock");
-    D3DKMTWaitForSynchronizationObject     = SK_GetProcAddress (SK::DXGI::hModD3D11, "D3DKMTWaitForSynchronizationObject");
+    D3DKMTCloseAdapter                     = SK_GetProcAddress (L"gdi32.dll",        "D3DKMTCloseAdapter");
+    D3DKMTDestroyAllocation                = SK_GetProcAddress (L"gdi32.dll",        "D3DKMTDestroyAllocation");
+    D3DKMTDestroyContext                   = SK_GetProcAddress (L"gdi32.dll",        "D3DKMTDestroyContext");
+    D3DKMTDestroyDevice                    = SK_GetProcAddress (L"gdi32.dll",        "D3DKMTDestroyDevice ");
+    D3DKMTDestroySynchronizationObject     = SK_GetProcAddress (L"gdi32.dll",        "D3DKMTDestroySynchronizationObject");
+    D3DKMTQueryAdapterInfo                 = SK_GetProcAddress (L"gdi32.dll",        "D3DKMTQueryAdapterInfo");
+    D3DKMTSetDisplayPrivateDriverFormat    = SK_GetProcAddress (L"gdi32.dll",        "D3DKMTSetDisplayPrivateDriverFormat");
+    D3DKMTSignalSynchronizationObject      = SK_GetProcAddress (L"gdi32.dll",        "D3DKMTSignalSynchronizationObject");
+    D3DKMTUnlock                           = SK_GetProcAddress (L"gdi32.dll",        "D3DKMTUnlock");
+    D3DKMTWaitForSynchronizationObject     = SK_GetProcAddress (L"gdi32.dll",        "D3DKMTWaitForSynchronizationObject");
     EnableFeatureLevelUpgrade              = SK_GetProcAddress (SK::DXGI::hModD3D11, "EnableFeatureLevelUpgrade");
     OpenAdapter10                          = SK_GetProcAddress (SK::DXGI::hModD3D11, "OpenAdapter10");
     OpenAdapter10_2                        = SK_GetProcAddress (SK::DXGI::hModD3D11, "OpenAdapter10_2");
     D3D11CoreCreateLayeredDevice           = SK_GetProcAddress (SK::DXGI::hModD3D11, "D3D11CoreCreateLayeredDevice");
     D3D11CoreGetLayeredDeviceSize          = SK_GetProcAddress (SK::DXGI::hModD3D11, "D3D11CoreGetLayeredDeviceSize");
     D3D11CoreRegisterLayers                = SK_GetProcAddress (SK::DXGI::hModD3D11, "D3D11CoreRegisterLayers");
-    D3DKMTCreateAllocation                 = SK_GetProcAddress (SK::DXGI::hModD3D11, "D3DKMTCreateAllocation");
-    D3DKMTCreateContext                    = SK_GetProcAddress (SK::DXGI::hModD3D11, "D3DKMTCreateContext");
-    D3DKMTCreateDevice                     = SK_GetProcAddress (SK::DXGI::hModD3D11, "D3DKMTCreateDevice");
-    D3DKMTCreateSynchronizationObject      = SK_GetProcAddress (SK::DXGI::hModD3D11, "D3DKMTCreateSynchronizationObject");
-    D3DKMTEscape                           = SK_GetProcAddress (SK::DXGI::hModD3D11, "D3DKMTEscape");
-    D3DKMTGetContextSchedulingPriority     = SK_GetProcAddress (SK::DXGI::hModD3D11, "D3DKMTGetContextSchedulingPriority");
-    D3DKMTGetDeviceState                   = SK_GetProcAddress (SK::DXGI::hModD3D11, "D3DKMTGetDeviceState");
-    D3DKMTGetDisplayModeList               = SK_GetProcAddress (SK::DXGI::hModD3D11, "D3DKMTGetDisplayModeList");
-    D3DKMTGetMultisampleMethodList         = SK_GetProcAddress (SK::DXGI::hModD3D11, "D3DKMTGetMultisampleMethodList");
-    D3DKMTGetRuntimeData                   = SK_GetProcAddress (SK::DXGI::hModD3D11, "D3DKMTGetRuntimeData");
-    D3DKMTGetSharedPrimaryHandle           = SK_GetProcAddress (SK::DXGI::hModD3D11, "D3DKMTGetSharedPrimaryHandle");
-    D3DKMTLock                             = SK_GetProcAddress (SK::DXGI::hModD3D11, "D3DKMTLock");
-    D3DKMTOpenAdapterFromHdc               = SK_GetProcAddress (SK::DXGI::hModD3D11, "D3DKMTOpenAdapterFromHdc");
-    D3DKMTOpenResource                     = SK_GetProcAddress (SK::DXGI::hModD3D11, "D3DKMTOpenResource");
-    D3DKMTPresent                          = SK_GetProcAddress (SK::DXGI::hModD3D11, "D3DKMTPresent");
-    D3DKMTQueryAllocationResidency         = SK_GetProcAddress (SK::DXGI::hModD3D11, "D3DKMTQueryAllocationResidency");
-    D3DKMTQueryResourceInfo                = SK_GetProcAddress (SK::DXGI::hModD3D11, "D3DKMTQueryResourceInfo");
-    D3DKMTRender                           = SK_GetProcAddress (SK::DXGI::hModD3D11, "D3DKMTRender");
-    D3DKMTSetAllocationPriority            = SK_GetProcAddress (SK::DXGI::hModD3D11, "D3DKMTSetAllocationPriority");
-    D3DKMTSetContextSchedulingPriority     = SK_GetProcAddress (SK::DXGI::hModD3D11, "D3DKMTSetContextSchedulingPriority");
-    D3DKMTSetDisplayMode                   = SK_GetProcAddress (SK::DXGI::hModD3D11, "D3DKMTSetDisplayMode");
-    D3DKMTSetGammaRamp                     = SK_GetProcAddress (SK::DXGI::hModD3D11, "D3DKMTSetGammaRamp");
-    D3DKMTSetVidPnSourceOwner              = SK_GetProcAddress (SK::DXGI::hModD3D11, "D3DKMTSetVidPnSourceOwner");
-    D3DKMTWaitForVerticalBlankEvent        = SK_GetProcAddress (SK::DXGI::hModD3D11, "D3DKMTWaitForVerticalBlankEvent");
+    D3DKMTCreateAllocation                 = SK_GetProcAddress (L"gdi32.dll",        "D3DKMTCreateAllocation");
+    D3DKMTCreateContext                    = SK_GetProcAddress (L"gdi32.dll",        "D3DKMTCreateContext");
+    D3DKMTCreateDevice                     = SK_GetProcAddress (L"gdi32.dll",        "D3DKMTCreateDevice");
+    D3DKMTCreateSynchronizationObject      = SK_GetProcAddress (L"gdi32.dll",        "D3DKMTCreateSynchronizationObject");
+    D3DKMTEscape                           = SK_GetProcAddress (L"gdi32.dll",        "D3DKMTEscape");
+    D3DKMTGetContextSchedulingPriority     = SK_GetProcAddress (L"gdi32.dll",        "D3DKMTGetContextSchedulingPriority");
+    D3DKMTGetDeviceState                   = SK_GetProcAddress (L"gdi32.dll",        "D3DKMTGetDeviceState");
+    D3DKMTGetDisplayModeList               = SK_GetProcAddress (L"gdi32.dll",        "D3DKMTGetDisplayModeList");
+    D3DKMTGetMultisampleMethodList         = SK_GetProcAddress (L"gdi32.dll",        "D3DKMTGetMultisampleMethodList");
+    D3DKMTGetRuntimeData                   = SK_GetProcAddress (L"gdi32.dll",        "D3DKMTGetRuntimeData");
+    D3DKMTGetSharedPrimaryHandle           = SK_GetProcAddress (L"gdi32.dll",        "D3DKMTGetSharedPrimaryHandle");
+    D3DKMTLock                             = SK_GetProcAddress (L"gdi32.dll",        "D3DKMTLock");
+    D3DKMTOpenAdapterFromHdc               = SK_GetProcAddress (L"gdi32.dll",        "D3DKMTOpenAdapterFromHdc");
+    D3DKMTOpenAdapterFromLuid              = SK_GetProcAddress (L"gdi32.dll",        "D3DKMTOpenAdapterFromLuid");
+    D3DKMTOpenResource                     = SK_GetProcAddress (L"gdi32.dll",        "D3DKMTOpenResource");
+    D3DKMTPresent                          = SK_GetProcAddress (L"gdi32.dll",        "D3DKMTPresent");
+    D3DKMTQueryAllocationResidency         = SK_GetProcAddress (L"gdi32.dll",        "D3DKMTQueryAllocationResidency");
+    D3DKMTQueryResourceInfo                = SK_GetProcAddress (L"gdi32.dll",        "D3DKMTQueryResourceInfo");
+    D3DKMTRender                           = SK_GetProcAddress (L"gdi32.dll",        "D3DKMTRender");
+    D3DKMTSetAllocationPriority            = SK_GetProcAddress (L"gdi32.dll",        "D3DKMTSetAllocationPriority");
+    D3DKMTSetContextSchedulingPriority     = SK_GetProcAddress (L"gdi32.dll",        "D3DKMTSetContextSchedulingPriority");
+    D3DKMTSetDisplayMode                   = SK_GetProcAddress (L"gdi32.dll",        "D3DKMTSetDisplayMode");
+    D3DKMTSetGammaRamp                     = SK_GetProcAddress (L"gdi32.dll",        "D3DKMTSetGammaRamp");
+    D3DKMTSetVidPnSourceOwner              = SK_GetProcAddress (L"gdi32.dll",        "D3DKMTSetVidPnSourceOwner");
+    D3DKMTWaitForVerticalBlankEvent        = SK_GetProcAddress (L"gdi32.dll",        "D3DKMTWaitForVerticalBlankEvent");
     D3DPerformance_BeginEvent              = SK_GetProcAddress (SK::DXGI::hModD3D11, "D3DPerformance_BeginEvent");
     D3DPerformance_EndEvent                = SK_GetProcAddress (SK::DXGI::hModD3D11, "D3DPerformance_EndEvent");
     D3DPerformance_GetStatus               = SK_GetProcAddress (SK::DXGI::hModD3D11, "D3DPerformance_GetStatus");
@@ -6348,8 +6480,12 @@ SK_D3D11_Init (void)
         {
           InterlockedIncrementRelease (&SK_D3D11_initialized);
 
-          success =
-            ( MH_OK == SK_ApplyQueuedHooks () );
+          bool  bEnable = SK_EnableApplyQueuedHooks  ();
+          {
+            success =
+              ( MH_OK == SK_ApplyQueuedHooks () );
+          }
+          if (! bEnable)  SK_DisableApplyQueuedHooks ();
         }
       }
 
@@ -7596,7 +7732,7 @@ D3D11CreateDeviceAndSwapChain_Detour (IDXGIAdapter          *pAdapter,
 
   if (! config.render.dxgi.debug_layer)
   {
-    if ( StrStrIW (SK_GetCallerName ().c_str (), L"d3d11.dll") || bEOSOverlay || (pSwapChainDesc != nullptr && !SK_DXGI_IsSwapChainReal (*pSwapChainDesc)))
+    if (bEOSOverlay || (pSwapChainDesc != nullptr && !SK_DXGI_IsSwapChainReal (*pSwapChainDesc)))
     {
       return
         D3D11CreateDeviceAndSwapChain_Import ( pAdapter,
@@ -7623,8 +7759,9 @@ D3D11CreateDeviceAndSwapChain_Detour (IDXGIAdapter          *pAdapter,
     SK_GetCurrentRenderBackend ();
 
   // Even if the game doesn't care about the feature level, we do.
-  D3D_FEATURE_LEVEL ret_level  = D3D_FEATURE_LEVEL_10_0;
-  ID3D11Device*     ret_device = nullptr;
+  D3D_FEATURE_LEVEL    ret_level  = D3D_FEATURE_LEVEL_10_0;
+  ID3D11Device*        ret_device = nullptr;
+  ID3D11DeviceContext* ret_ctx    = nullptr;
 
   // Allow override of swapchain parameters
   auto swap_chain_override =
@@ -7803,12 +7940,15 @@ D3D11CreateDeviceAndSwapChain_Detour (IDXGIAdapter          *pAdapter,
                                                            ppSwapChain,
                                                              &ret_device,
                                                                &ret_level,
-                                                                 ppImmediateContext )
+                                                                 &ret_ctx )
             );
 
 
   if (SUCCEEDED (res) && ppDevice != nullptr)
   {
+    // Stash the pointer to this device so that we can test equality on wrapped devices
+    ret_device->SetPrivateData (SKID_D3D11DeviceBasePtr, sizeof (uintptr_t), ret_device);
+
     if ( ppSwapChain    != nullptr &&
          pSwapChainDesc != nullptr    )
     {
@@ -7857,38 +7997,29 @@ D3D11CreateDeviceAndSwapChain_Detour (IDXGIAdapter          *pAdapter,
       }
     }
 
-    ////if (SK_GetCurrentGameID () == SK_GAME_ID::Tales_of_Vesperia)
-    {
+    bool bEnableImmediateWrap =
+      (SK_GetCurrentGameID () == SK_GAME_ID::Tales_of_Vesperia) || config.render.dxgi.deferred_isolation;
+
 #ifdef SK_D3D11_WRAP_IMMEDIATE_CTX
+    if (bEnableImmediateWrap && ret_device != nullptr && ret_ctx != nullptr)
+    {
+      ret_ctx =
+        SK_D3D11_WrapperFactory->wrapDeviceContext (ret_ctx);
+
+      SK_D3D11_SetWrappedImmediateContext (ret_device, ret_ctx);
+
       if (ppImmediateContext != nullptr)
-      {
-        ID3D11DeviceContext *pImmediate =
-          *ppImmediateContext;
-
-        if ( wrapped_contexts->find (pImmediate) ==
-             wrapped_contexts->cend (          )  )
-        {
-          (*wrapped_contexts)[pImmediate] =
-            SK_ComPtr <ID3D11DeviceContext4> (
-              SK_D3D11_WrapperFactory->wrapDeviceContext (pImmediate)
-            );
-        }
-
-        (*wrapped_contexts)[pImmediate].
-          QueryInterface <ID3D11DeviceContext> (
-                           ppImmediateContext
-          );
-
-        (*wrapped_immediates)[*ppDevice] =
-        (*wrapped_contexts)[pImmediate];
-      }
-
+         *ppImmediateContext = ret_ctx;
       else
       {
         SK_LOGi0 (L"Game Did Not Request Immediate Context...?!");
       }
-#endif
     }
+
+    else
+#endif
+    if (ppImmediateContext != nullptr)
+       *ppImmediateContext = ret_ctx;
 
     // Assume the first thing to create a D3D11 render device is
     //   the game and that devices never migrate threads; for most games
@@ -7975,12 +8106,6 @@ D3D11CreateDevice_Detour (
   Flags =
     SK_D3D11_MakeDebugFlags (Flags);
 
-  SK_TLS *pTLS =
-    SK_TLS_Bottom ();
-
-  auto& pTLS_d3d11 =
-    pTLS->render->d3d11.get ();
-
   // Optionally Enable Debug Layer
 //if (ReadAcquire (&__d3d11_ready) != 0)
   {
@@ -7994,40 +8119,10 @@ D3D11CreateDevice_Detour (
     }
   }
 
-  // Ignore Ansel
-  const bool bAnsel =
-    SK_COMPAT_IgnoreNvCameraCall ();
-
-  if (! config.render.dxgi.debug_layer)
-  {
-    if (pTLS_d3d11.skip_d3d11_create_device != FALSE || bAnsel)
-    {
-      HRESULT hr =
-        D3D11CreateDevice_Import ( pAdapter,
-                                   pAdapter == nullptr ? D3D_DRIVER_TYPE_HARDWARE
-                                                       : DriverType,
-                                     pAdapter == nullptr ? nullptr
-                                                         : Software, Flags,
-                                       pFeatureLevels, FeatureLevels, SDKVersion,
-                                         ppDevice, pFeatureLevel,
-                                           ppImmediateContext );
-
-      if (! bAnsel)
-        pTLS->render->d3d11->skip_d3d11_create_device = FALSE;
-
-      return hr;
-    }
-  }
-
   DXGI_LOG_CALL_1 (L"D3D11CreateDevice            ", L"Flags=0x%x", Flags);
-
-  SK_ScopedBool auto_bool_skip (
-    &pTLS->render->d3d11->skip_d3d11_create_device
-  );
   
   SK_RunOnce ({
     SK_D3D11_Init ();
-    pTLS->render->d3d11->skip_d3d11_create_device = TRUE;
   });
 
   HRESULT hr =
@@ -8268,6 +8363,19 @@ D3D11Dev_CreateDeferredContext3_Override (
   return D3D11Dev_CreateDeferredContext3_Original (This, ContextFlags, nullptr);
 }
 
+void
+SK_D3D11_WrapAndStashImmediateContext ( ID3D11Device        *pDev,
+                                        ID3D11DeviceContext *pDevCtx )
+{
+  if (pDevCtx == nullptr)
+    return;
+
+  SK_ComPtr <ID3D11DeviceContext> pWrappedImmediate =
+    SK_D3D11_WrapperFactory->wrapDeviceContext (pDevCtx);
+
+  SK_D3D11_SetWrappedImmediateContext (pDev, pWrappedImmediate);
+}
+
 _declspec (noinline)
 void
 STDMETHODCALLTYPE
@@ -8281,26 +8389,35 @@ D3D11Dev_GetImmediateContext_Override (
   }
 
 #ifdef SK_D3D11_WRAP_IMMEDIATE_CTX
-  if (config.render.dxgi.deferred_isolation)
+  const bool bEnableImmediateWrap =
+    (SK_GetCurrentGameID () == SK_GAME_ID::Tales_of_Vesperia) || config.render.dxgi.deferred_isolation;
+
+  if (bEnableImmediateWrap && ppImmediateContext != nullptr)
   {
-    if (ppImmediateContext != nullptr && wrapped_immediates->find (This) !=
-                                         wrapped_immediates->cend (    ))
+    SK_ComPtr <ID3D11DeviceContext> pWrappedContext =
+      SK_D3D11_GetWrappedImmediateContext (This);
+
+    if (pWrappedContext.p != nullptr)
     {
-      (*wrapped_immediates) [This].
-        QueryInterface <ID3D11DeviceContext> (
-                         ppImmediateContext
-        );
+      pWrappedContext->QueryInterface <ID3D11DeviceContext> (
+        ppImmediateContext
+      );
+      return;
+    }
+
+    else
+    {
+      *ppImmediateContext = nullptr;
+
+      D3D11Dev_GetImmediateContext_Original (This,  ppImmediateContext);
+      SK_D3D11_WrapAndStashImmediateContext (This, *ppImmediateContext);
+
       return;
     }
   }
 #endif
 
-  ID3D11DeviceContext* pCtx = nullptr;
-
-  D3D11Dev_GetImmediateContext_Original (This, &pCtx);
-
-  if (ppImmediateContext != nullptr)
-     *ppImmediateContext = pCtx;
+  D3D11Dev_GetImmediateContext_Original (This, ppImmediateContext);
 }
 
 _declspec (noinline)
@@ -8310,17 +8427,46 @@ D3D11Dev_GetImmediateContext1_Override (
   _In_            ID3D11Device1         *This,
   _Out_           ID3D11DeviceContext1 **ppImmediateContext1 )
 {
+  // These versioned APIs didn't initially handle wrapped contexts, so log
+  //   if a game uses it so we can identify potentially breaking behavior
+  //     post-23.8.12.
+  SK_LOG_FIRST_CALL
+
   if (config.system.log_level > 1)
   {
     DXGI_LOG_CALL_0 (L"ID3D11Device1::GetImmediateContext1");
   }
 
-  ID3D11DeviceContext1* pCtx1 = nullptr;
+#ifdef SK_D3D11_WRAP_IMMEDIATE_CTX
+  const bool bEnableImmediateWrap =
+    (SK_GetCurrentGameID () == SK_GAME_ID::Tales_of_Vesperia) || config.render.dxgi.deferred_isolation;
 
-  D3D11Dev_GetImmediateContext1_Original (This, &pCtx1);
+  if (bEnableImmediateWrap && ppImmediateContext1 != nullptr)
+  {
+    SK_ComPtr <ID3D11DeviceContext> pWrappedContext =
+      SK_D3D11_GetWrappedImmediateContext (This);
 
-  if (ppImmediateContext1 != nullptr)
-     *ppImmediateContext1 = pCtx1;
+    if (pWrappedContext.p != nullptr)
+    {
+      pWrappedContext->QueryInterface <ID3D11DeviceContext1> (
+        ppImmediateContext1
+      );
+      return;
+    }
+
+    else
+    {
+      *ppImmediateContext1 = nullptr;
+
+      D3D11Dev_GetImmediateContext1_Original (This,  ppImmediateContext1);
+      SK_D3D11_WrapAndStashImmediateContext  (This, *ppImmediateContext1);
+
+      return;
+    }
+  }
+#endif
+
+  D3D11Dev_GetImmediateContext1_Original (This, ppImmediateContext1);
 }
 
 _declspec (noinline)
@@ -8330,17 +8476,46 @@ D3D11Dev_GetImmediateContext2_Override (
   _In_            ID3D11Device2         *This,
   _Out_           ID3D11DeviceContext2 **ppImmediateContext2 )
 {
+  // These versioned APIs didn't initially handle wrapped contexts, so log
+  //   if a game uses it so we can identify potentially breaking behavior
+  //     post-23.8.12.
+  SK_LOG_FIRST_CALL
+
   if (config.system.log_level > 1)
   {
     DXGI_LOG_CALL_0 (L"ID3D11Device2::GetImmediateContext2");
   }
 
-  ID3D11DeviceContext2* pCtx2 = nullptr;
+  const bool bEnableImmediateWrap =
+    (SK_GetCurrentGameID () == SK_GAME_ID::Tales_of_Vesperia) || config.render.dxgi.deferred_isolation;
 
-  D3D11Dev_GetImmediateContext2_Original (This, &pCtx2);
+#ifdef SK_D3D11_WRAP_IMMEDIATE_CTX
+  if (bEnableImmediateWrap && ppImmediateContext2 != nullptr)
+  {
+    SK_ComPtr <ID3D11DeviceContext> pWrappedContext =
+      SK_D3D11_GetWrappedImmediateContext (This);
 
-  if (ppImmediateContext2 != nullptr)
-     *ppImmediateContext2 = pCtx2;
+    if (pWrappedContext.p != nullptr)
+    {
+      pWrappedContext->QueryInterface <ID3D11DeviceContext2> (
+        ppImmediateContext2
+      );
+      return;
+    }
+
+    else
+    {
+      *ppImmediateContext2 = nullptr;
+
+      D3D11Dev_GetImmediateContext2_Original (This,  ppImmediateContext2);
+      SK_D3D11_WrapAndStashImmediateContext  (This, *ppImmediateContext2);
+
+      return;
+    }
+  }
+#endif
+
+  D3D11Dev_GetImmediateContext2_Original (This, ppImmediateContext2);
 }
 
 _declspec (noinline)
@@ -8350,17 +8525,46 @@ D3D11Dev_GetImmediateContext3_Override (
   _In_            ID3D11Device3         *This,
   _Out_           ID3D11DeviceContext3 **ppImmediateContext3 )
 {
+  // These versioned APIs didn't initially handle wrapped contexts, so log
+  //   if a game uses it so we can identify potentially breaking behavior
+  //     post-23.8.12.
+  SK_LOG_FIRST_CALL
+
   if (config.system.log_level > 1)
   {
     DXGI_LOG_CALL_0 (L"ID3D11Device3::GetImmediateContext3");
   }
 
-  ID3D11DeviceContext3* pCtx3 = nullptr;
+#ifdef SK_D3D11_WRAP_IMMEDIATE_CTX
+  const bool bEnableImmediateWrap =
+    (SK_GetCurrentGameID () == SK_GAME_ID::Tales_of_Vesperia) || config.render.dxgi.deferred_isolation;
 
-  D3D11Dev_GetImmediateContext3_Original (This, &pCtx3);
+  if (bEnableImmediateWrap && ppImmediateContext3 != nullptr)
+  {
+    SK_ComPtr <ID3D11DeviceContext> pWrappedContext =
+      SK_D3D11_GetWrappedImmediateContext (This);
 
-  if (ppImmediateContext3 != nullptr)
-     *ppImmediateContext3 = pCtx3;
+    if (pWrappedContext.p != nullptr)
+    {
+      pWrappedContext->QueryInterface <ID3D11DeviceContext3> (
+        ppImmediateContext3
+      );
+      return;
+    }
+
+    else
+    {
+      *ppImmediateContext3 = nullptr;
+
+      D3D11Dev_GetImmediateContext3_Original (This,  ppImmediateContext3);
+      SK_D3D11_WrapAndStashImmediateContext  (This, *ppImmediateContext3);
+
+      return;
+    }
+  }
+#endif
+
+  D3D11Dev_GetImmediateContext3_Original (This, ppImmediateContext3);
 }
 
 
@@ -8708,6 +8912,10 @@ SK_D3D11_EndFrame (SK_TLS* pTLS)
 
     disjoint_done = false;
   }
+
+  // Basically the same as above, only for HDR processing timers
+  SK_D3D11_EndFrameHDR ();
+
 
   vertex.tracked.clear   ();
   pixel.tracked.clear    ();

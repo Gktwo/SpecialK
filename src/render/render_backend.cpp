@@ -32,20 +32,11 @@
 #include <SpecialK/render/d3d8/d3d8_backend.h>
 #include <SpecialK/render/gl/opengl_backend.h>
 #include <SpecialK/render/ddraw/ddraw_backend.h>
-#include <SpecialK/render/d3d12/d3d12_interfaces.h>
-#include <SpecialK/render/d3d11/d3d11_core.h>
 #include <SpecialK/render/dxgi/dxgi_hdr.h>
 
 #include <SpecialK/nvapi.h>
-#include <SpecialK/resource.h> // Unpack shader compiler
 
 volatile ULONG64 SK_RenderBackend::frames_drawn = 0ULL;
-
-SK_WDDM_CAPS SK_WDDM_SupportedCaps;
-
-extern void
-SK_DXGI_UpdateColorSpace (IDXGISwapChain3* This, DXGI_OUTPUT_DESC1 *outDesc = nullptr);
-
 extern void
 SK_Display_EnableHDR (SK_RenderBackend_V2::output_s *pDisplay);
 
@@ -109,9 +100,9 @@ SK_InitRenderBackends (void)
     //
     pCommandProcessor->AddVariable (              "RenderHooks.D3D11",
         SK_CreateVar (SK_IVariable::Boolean, &config.apis.dxgi.d3d11.hook));
-#ifdef _M_AMD64
     pCommandProcessor->AddVariable (              "RenderHooks.D3D12",
         SK_CreateVar (SK_IVariable::Boolean, &config.apis.dxgi.d3d12.hook));
+#ifdef _M_AMD64
     pCommandProcessor->AddVariable (         "RenderHooks.Vulkan",
         SK_CreateVar (SK_IVariable::Boolean, &config.apis.Vulkan.hook));
 #else /* _M_IX86 */
@@ -132,6 +123,100 @@ SK_InitRenderBackends (void)
 //
 //////////////////////////////////////////////////////////////////////////
 #define D3D9_TEXTURE_MOD
+
+bool
+__stdcall
+SK_DXVK_CheckForInterop (void)
+{
+  HMODULE hModD3D9 =
+    SK_GetModuleHandle (L"d3d9.dll");
+
+  if (hModD3D9 == 0)
+  {
+    wchar_t     wszDllPath [MAX_PATH] = { };
+    PathAppend (wszDllPath, SK_GetHostPath ());
+    PathAppend (wszDllPath, L"d3d9.dll");
+
+    if (PathFileExistsW (wszDllPath))
+    {
+      hModD3D9 =
+        SK_LoadLibraryW (wszDllPath);
+    }
+  }
+
+  if (hModD3D9 != 0)
+  {
+    std::wstring str_d3d9ver =
+      SK_GetDLLProductName (
+        SK_GetModuleFullName (hModD3D9).c_str ()
+                          );
+
+    if (str_d3d9ver.find (L"DXVK") != std::wstring::npos)
+    {
+      if ( config.apis.d3d9.native_dxvk == -1                &&
+             sk::NVAPI::InitializeLibrary (SK_GetHostApp ()) &&
+             sk::NVAPI::nv_hardware
+         )
+      {
+        if ( IDYES == 
+               SK_MessageBox ( L"Enable native DXVK support?",
+                               L"DXVK (D3D9) Detected", MB_YESNO ) )
+        {
+          config.apis.d3d9.hook                        = false;
+          config.apis.d3d9ex.hook                      = false;
+          config.display.force_windowed                = true;
+          config.apis.d3d9.native_dxvk                 = 1;
+          config.apis.NvAPI.vulkan_bridge              = 1;
+
+          SK_SaveConfig ();
+
+          SK_NvAPI_EnableVulkanBridge (TRUE);
+          SK_RestartGame              (    );
+        }
+
+        else
+        {
+          config.apis.d3d9.native_dxvk                 = 0;
+
+          SK_SaveConfig ();
+        }
+      }
+
+      return true;
+    }
+  }
+
+  HMODULE hModD3D11 =
+    SK_GetModuleHandle (L"d3d11.dll");
+
+  if (hModD3D11 == 0)
+  {
+    wchar_t     wszDllPath [MAX_PATH] = { };
+    PathAppend (wszDllPath, SK_GetHostPath ());
+    PathAppend (wszDllPath, L"d3d11.dll");
+
+    if (PathFileExistsW (wszDllPath))
+    {
+      hModD3D9 =
+        SK_LoadLibraryW (wszDllPath);
+    }
+  }
+
+  if (hModD3D11 != 0)
+  {
+    std::wstring str_d3d11ver =
+      SK_GetDLLProductName (
+        SK_GetModuleFullName (hModD3D11).c_str ()
+                          );
+
+    if (str_d3d11ver.find (L"DXVK") != std::wstring::npos)
+    {
+      return true;
+    }
+  }
+
+  return false;
+}
 
 void
 SK_BootD3D9 (void)
@@ -173,6 +258,9 @@ SK_BootD3D9 (void)
 
   if (InterlockedCompareExchangeAcquire (&__booted, TRUE, FALSE) == FALSE)
   {
+    // Offer to enable native Vulkan support
+    SK_DXVK_CheckForInterop ();
+
     if (pTLS != nullptr)
         pTLS->render->d3d9->ctx_init_thread = true;
 
@@ -341,13 +429,11 @@ SK_BootDXGI (void)
     return;
   }
 
-#ifdef _M_AMD64
   //
   // TEMP HACK: D3D11 must be enabled to hook D3D12...
   //
   if (config.apis.dxgi.d3d12.hook && (! config.apis.dxgi.d3d11.hook))
     config.apis.dxgi.d3d11.hook = true;
-#endif
 
   if (! ( config.apis.dxgi.d3d11.hook ||
           config.apis.dxgi.d3d12.hook ))
@@ -399,6 +485,13 @@ SK_BootDXGI (void)
 void
 SK_BootOpenGL (void)
 {
+  if (SK_GetCurrentGameID () == SK_GAME_ID::yuzu)
+  {
+    static bool          once = false;
+    if (! std::exchange (once, true))
+      return;
+  }
+
   if (! config.compatibility.init_on_separate_thread)
   {
     config.compatibility.init_on_separate_thread = true;
@@ -454,50 +547,229 @@ SK_BootOpenGL (void)
 }
 
 
+#include "vulkan/vulkan.h"
+#include "vulkan/vulkan_win32.h"
+
+PFN_vkCreateSwapchainKHR vkCreateSwapchainKHR_Original = nullptr;
+
+VkResult
+SK_VK_CreateSwapchainKHR (
+            VkDevice                   device,
+      const VkSwapchainCreateInfoKHR*  pCreateInfo,
+      const VkAllocationCallbacks*     pAllocator,
+    VkSwapchainKHR*                    pSwapchain )
+{
+  VkSurfaceFullScreenExclusiveInfoEXT
+    fse_info                     = { };
+    fse_info.sType               = VK_STRUCTURE_TYPE_SURFACE_FULL_SCREEN_EXCLUSIVE_INFO_EXT;
+    fse_info.fullScreenExclusive = VK_FULL_SCREEN_EXCLUSIVE_DISALLOWED_EXT;
+
+  const void *pNext =     pCreateInfo->pNext;
+  auto _CreateInfoCopy = *pCreateInfo;
+
+         fse_info.pNext = (void *)pNext;
+  _CreateInfoCopy.pNext =     &fse_info;
+
+  SK_LOG0 (
+    ( L"Disabling Fullscreen Exclusive" ), L" VulkanIK "
+  );
+
+  return
+    vkCreateSwapchainKHR_Original (device, &_CreateInfoCopy, pAllocator, pSwapchain);
+}
+
+void
+_SK_HookVulkan (void)
+{
+  if (! config.apis.Vulkan.hook)
+    return;
+
+  static volatile LONG hooked = FALSE;
+
+  if (SK_LoadLibraryW (L"vulkan-1.dll") != nullptr)
+  {
+    if (! InterlockedCompareExchangeAcquire (&hooked, TRUE, FALSE))
+    {
+      config.render.gl.disable_fullscreen = true;
+
+      //
+      // DXGI / VK Interop Setup
+      //
+          SK_CreateDLLHook (L"vulkan-1.dll",
+                             "vkCreateSwapchainKHR",
+                          SK_VK_CreateSwapchainKHR,
+     static_cast_p2p <void> (&vkCreateSwapchainKHR_Original));
+    }
+  }
+}
+
 void
 SK_BootVulkan (void)
 {
-//#ifdef _M_AMD64
-//  static volatile ULONG __booted = FALSE;
-//
-//  if (InterlockedCompareExchange (&__booted, TRUE, FALSE))
-//    return;
-//
-//  // Establish the minimal set of APIs necessary to work as vulkan-1.dll
-//  if (SK_GetDLLRole () == DLL_ROLE::Vulkan)
-//    config.apis.Vulkan.hook = true;
-//
-//  if (! config.apis.Vulkan.hook)
-//    return;
-//
-//  dll_log.Log (L"[API Detect]  <!> [ Bootstrapping Vulkan 1.x (vulkan-1.dll) ] <!>");
-//
-//  SK_HookVulkan ();
-//#endif
+  static volatile ULONG __booted = FALSE;
+
+  if (InterlockedCompareExchange (&__booted, TRUE, FALSE))
+    return;
+
+  // Establish the minimal set of APIs necessary to work as vulkan-1.dll
+  if (SK_GetDLLRole () == DLL_ROLE::Vulkan)
+    config.apis.Vulkan.hook = true;
+
+  if (! config.apis.Vulkan.hook)
+    return;
+
+  _SK_HookVulkan ();
 }
-
-typedef struct _D3DKMT_OPENADAPTERFROMGDIDISPLAYNAME {
-  WCHAR                          DeviceName [32];
-  D3DKMT_HANDLE                  hAdapter;
-  LUID                           AdapterLuid;
-  D3DDDI_VIDEO_PRESENT_SOURCE_ID VidPnSourceId;
-} D3DKMT_OPENADAPTERFROMGDIDISPLAYNAME;
-
-using  D3DKMTOpenAdapterFromGdiDisplayName_pfn = NTSTATUS (WINAPI *)(D3DKMT_OPENADAPTERFROMGDIDISPLAYNAME* unnamedParam1);
-static D3DKMTOpenAdapterFromGdiDisplayName_pfn
-       D3DKMTOpenAdapterFromGdiDisplayName = nullptr;
-
-using  D3DKMTGetMultiPlaneOverlayCaps_pfn = NTSTATUS (WINAPI *)(D3DKMT_GET_MULTIPLANE_OVERLAY_CAPS* unnamedParam1);
-static D3DKMTGetMultiPlaneOverlayCaps_pfn
-       D3DKMTGetMultiPlaneOverlayCaps = nullptr;
-
-extern HRESULT SK_D3DKMT_CloseAdapter (struct _D3DKMT_CLOSEADAPTER *pCloseAdapter);
 
 void
 SK_RenderBackend_V2::gsync_s::update (bool force)
 {
   static auto& rb =
     SK_GetCurrentRenderBackend ();
+
+  auto& display =
+    rb.displays [rb.active_display];
+
+  auto _EvaluateAutoLowLatency = [&]()
+  {
+    // Opt-in to Auto-Low Latency the first time this is seen
+    if (capable && active && config.render.framerate.auto_low_latency.waiting &&
+                             config.render.framerate.present_interval != 0)
+    {
+      config.nvidia.reflex.enable                 = true;
+      config.nvidia.reflex.low_latency            = true;
+      config.render.framerate.sync_interval_clamp = 1; // Prevent games from F'ing VRR up.
+      config.render.framerate.auto_low_latency.
+                                          waiting = false;
+      config.render.framerate.auto_low_latency.
+                                        triggered = true;
+      // ^^^ Now turn auto-low latency off, so the user can select their own setting if they want
+
+      // Use the Low-Latency Limiter mode, even though it might cause stutter.
+      if (config.render.framerate.auto_low_latency.policy.ultra_low_latency)
+      {
+        config.nvidia.reflex.low_latency_boost     = true;
+        config.nvidia.reflex.marker_optimization   = true;
+        config.render.framerate.enforcement_policy = 2;
+      }
+      else
+      {
+        // No need to turn this off, just turn off latency marker optimization
+      //config.nvidia.reflex.low_latency_boost     = false;
+        config.nvidia.reflex.marker_optimization   = false;
+        config.render.framerate.enforcement_policy = 4;
+      }
+    
+      const double dRefreshRate =
+        static_cast <double> (display.signal.timing.vsync_freq.Numerator) /
+        static_cast <double> (display.signal.timing.vsync_freq.Denominator);
+    
+      const double dVRROptimalFPS =
+        dRefreshRate - (dRefreshRate * dRefreshRate) / (60.0 * 60.0) - 0.1;
+    
+      extern float __target_fps;
+      if (__target_fps == 0.0f || __target_fps > dVRROptimalFPS)
+      {
+        //SK_ImGui_WarningWithTitle (
+        //  SK_FormatStringW (L"Framerate Limit Set to %.2f FPS For Optimal VRR", dVRROptimalFPS).c_str (),
+        //                    L"Auto Low-Latency (VRR) Mode Activated"
+        //);
+    
+        config.render.framerate.target_fps = static_cast <float> (dVRROptimalFPS);
+        __target_fps                       = static_cast <float> (dVRROptimalFPS);
+      }
+    }
+  };
+
+  SK_RunOnce (disabled.for_app = (! SK_NvAPI_GetVRREnablement ()));
+
+  //
+  // All non-D3D9 or D3D11 APIs
+  //
+
+  if (rb.api != SK_RenderAPI::D3D11  &&
+      rb.api != SK_RenderAPI::D3D9Ex &&
+      rb.api != SK_RenderAPI::D3D9)
+  {
+    maybe_active = false;
+
+    if (! disabled.for_app)
+    {
+      static HANDLE hVRRThread =
+      SK_Thread_CreateEx ([](LPVOID)->
+      DWORD
+      {
+        SK_Thread_SetCurrentPriority (THREAD_PRIORITY_BELOW_NORMAL);
+
+        do
+        {
+          auto& display =
+            rb.displays [rb.active_display];
+
+          NV_GET_VRR_INFO vrr_info            = {       NV_GET_VRR_INFO_VER };
+          display.nvapi.monitor_caps.version  = NV_MONITOR_CAPABILITIES_VER;
+          display.nvapi.monitor_caps.infoType = NV_MONITOR_CAPS_TYPE_GENERIC;
+
+          SK_NvAPI_Disp_GetVRRInfo             (display.nvapi.display_id, &vrr_info);
+          SK_NvAPI_DISP_GetMonitorCapabilities (display.nvapi.display_id,
+                                               &display.nvapi.monitor_caps);
+
+          display.nvapi.vrr_enabled =
+            vrr_info.bIsVRREnabled;
+
+          rb.gsync_state.capable = display.nvapi.vrr_enabled;
+          rb.gsync_state.active  = false;
+
+          if (rb.gsync_state.capable)
+          {
+            if (rb.presentation.mode == SK_PresentMode::Hardware_Composed_Independent_Flip   ||
+                rb.presentation.mode == SK_PresentMode::Hardware_Independent_Flip            ||
+                rb.presentation.mode == SK_PresentMode::Hardware_Legacy_Copy_To_Front_Buffer ||
+                rb.presentation.mode == SK_PresentMode::Hardware_Legacy_Flip)
+            {
+              rb.gsync_state.active =
+                (rb.present_interval < 2);
+            }
+            else
+            {
+              if (rb.presentation.mode == SK_PresentMode::Composed_Flip         ||
+                  rb.presentation.mode == SK_PresentMode::Composed_Copy_GPU_GDI ||
+                  rb.presentation.mode == SK_PresentMode::Composed_Copy_CPU_GDI)
+              {
+                rb.gsync_state.active = false;
+              }
+
+              if (rb.presentation.mode == SK_PresentMode::Unknown)
+                rb.gsync_state.maybe_active = true;
+            }
+          }
+
+          else
+          {
+            auto &monitor_caps =
+              display.nvapi.monitor_caps;
+
+            rb.gsync_state.capable =
+              monitor_caps.data.caps.supportVRR &&
+              monitor_caps.data.caps.currentlyCapableOfVRR;
+          }
+        } while ( WAIT_OBJECT_0 !=
+                  WaitForSingleObject (__SK_DLL_TeardownEvent, 750UL) );
+
+        SK_Thread_CloseSelf ();
+
+        return 0;
+      }, L"[SK] VRR Status Monitor");
+    }
+
+    return
+      _EvaluateAutoLowLatency ();
+  }
+
+
+  //
+  // D3D9 or D3D11
+  //
 
   // DO NOT hold onto this. NVAPI does not explain how NVDX handles work, but
   //   we can generally assume their lifetime is only as long as the D3D resource
@@ -508,9 +780,9 @@ SK_RenderBackend_V2::gsync_s::update (bool force)
     rb.surface.dxgi  = nullptr;
     rb.surface.d3d9  = nullptr;
     rb.surface.nvapi = nullptr;
-  };
 
-  SK_RunOnce (disabled = (! SK_NvAPI_GetVRREnablement ()));
+    _EvaluateAutoLowLatency ();
+  };
 
   if (! ((force || config.apis.NvAPI.gsync_status) &&
                            sk::NVAPI::nv_hardware) )
@@ -526,7 +798,6 @@ SK_RenderBackend_V2::gsync_s::update (bool force)
 
   if ( last_checked < (dwTimeNow - 666UL) )
   {    last_checked =  dwTimeNow;
-
     bool success = false;
 
     if ( rb.device        == nullptr  ||
@@ -539,10 +810,10 @@ SK_RenderBackend_V2::gsync_s::update (bool force)
         _ClearTemporarySurfaces ();
     }
 
-    if ( NVAPI_OK == NvAPI_D3D_IsGSyncCapable ( rb.device,
-                                                rb.surface.nvapi, &capable))
+    if ( NVAPI_OK == SK_NvAPI_D3D_IsGSyncCapable ( rb.device,
+                                                   rb.surface.nvapi, &capable))
     {
-      NvAPI_D3D_IsGSyncActive ( rb.device,      rb.surface.nvapi, &active);
+      SK_NvAPI_D3D_IsGSyncActive ( rb.device,      rb.surface.nvapi, &active);
 
       success      = true;
     }
@@ -818,22 +1089,6 @@ SK_RenderBackend_V2::getSwapWaitHandle (void)
   {
     if (config.render.framerate.pre_render_limit > 0)
     {
-      /////if (
-      /////  FAILED ( pSwap2.p->SetMaximumFrameLatency (
-      /////             config.render.framerate.pre_render_limit
-      /////                                            )
-      /////         )
-      /////   )
-      /////{
-      /////  SK_LOG0 ( ( L"Failed to SetMaximumFrameLatency: %i",
-      /////                config.render.framerate.pre_render_limit ),
-      /////              L"   DXGI   " );
-      /////
-      /////  config.render.framerate.pre_render_limit = -1;
-      /////
-      /////  return 0;
-      /////}
-
       DXGI_SWAP_CHAIN_DESC swap_desc = { };
       pSwap2->GetDesc    (&swap_desc);
 
@@ -996,6 +1251,7 @@ SK_RenderBackend_V2::window_registry_s::setFocus (HWND hWnd)
   {
     focus.update        (hWndRoot);
     game_window.hWnd   = hWndRoot;
+    game_window.top    = GetTopWindow (hWndRoot);
     game_window.active = true;
 
     SK_LOG1 (( __FUNCTIONW__ L" (%p)", hWnd ), L"  DEBUG!  ");
@@ -1219,6 +1475,27 @@ SK_Render_GetAPIName (SK_RenderAPI api)
     L"Unknown API";
 }
 
+uint32_t
+SK_Render_GetVulkanInteropSwapChainType (IUnknown *swapchain)
+{
+  uint32_t  bVkInterop     = 0;
+  UINT     uiVkInteropSize = 4;
+
+  SK_ComQIPtr <IDXGISwapChain>
+                   pSwapChain (swapchain);
+
+  if ( pSwapChain.p != nullptr && SUCCEEDED (
+       pSwapChain->GetPrivateData ( SKID_DXGI_VK_InteropSwapChain,
+                                           &uiVkInteropSize,
+                                            &bVkInterop ) )
+     )
+  {
+    return bVkInterop;
+  }
+
+  return 0;
+}
+
 
 void
 SK_RenderBackend_V2::updateActiveAPI (SK_RenderAPI _api)
@@ -1272,8 +1549,23 @@ SK_RenderBackend_V2::updateActiveAPI (SK_RenderAPI _api)
 
       else if (SUCCEEDED (device->QueryInterface <ID3D12Device> (&pDev12)))
       {
-        api  = SK_RenderAPI::D3D12;
-        wcsncpy (name, L"D3D12 ", 8);
+        // Establish the API used this frame (and handle possible translation layers)
+        //
+        switch (SK_GetDLLRole ())
+        {
+          case DLL_ROLE::D3D8:
+            api = SK_RenderAPI::D3D8On12;
+            wcscpy (name, L"D3D8");
+            break;
+          case DLL_ROLE::DDraw:
+            api = SK_RenderAPI::DDrawOn12;
+            wcscpy (name, L"DDraw");
+            break;
+          default:
+            api = SK_RenderAPI::D3D12;
+            wcsncpy (name, L"D3D12 ", 8);
+            break;
+        }
       }
 
       else if (SUCCEEDED (device->QueryInterface <ID3D11Device> (&pDev11)))
@@ -1303,20 +1595,42 @@ SK_RenderBackend_V2::updateActiveAPI (SK_RenderAPI _api)
 
           else
           {
-            SK_ComPtr <IUnknown> pTest = nullptr;
+            auto uiVkLayerType =
+              SK_Render_GetVulkanInteropSwapChainType (swapchain);
 
-            if (       SUCCEEDED (device->QueryInterface (IID_ID3D11Device5, (void **)&pTest))) {
-              wcsncpy (name, L"D3D11.4", 8); // Creators Update
-            } else if (SUCCEEDED (device->QueryInterface (IID_ID3D11Device4, (void **)&pTest))) {
-              wcsncpy (name, L"D3D11.4", 8);
-            } else if (SUCCEEDED (device->QueryInterface (IID_ID3D11Device3, (void **)&pTest))) {
-              wcsncpy (name, L"D3D11.3", 8);
-            } else if (SUCCEEDED (device->QueryInterface (IID_ID3D11Device2, (void **)&pTest))) {
-              wcsncpy (name, L"D3D11.2", 8);
-            } else if (SUCCEEDED (device->QueryInterface (IID_ID3D11Device1, (void **)&pTest))) {
-              wcsncpy (name, L"D3D11.1", 8);
-            } else {
-              wcsncpy (name, L"D3D11 ", 8);
+            if (uiVkLayerType != SK_DXGI_VK_INTEROP_TYPE_NONE)
+            {
+              switch (uiVkLayerType)
+              {
+                case SK_DXGI_VK_INTEROP_TYPE_IK:
+                  wcsncpy (name, L"Vulkan-IK", 10);
+                  break;
+                case SK_DXGI_VK_INTEROP_TYPE_NV:
+                  wcsncpy (name, L"Vulkan", 8);
+                  break;
+                default:
+                  wcsncpy (name, L"Interop??", 10);
+                  break;
+              }
+            }
+
+            else
+            {
+              SK_ComPtr <IUnknown> pTest = nullptr;
+
+              if (       SUCCEEDED (device->QueryInterface (IID_ID3D11Device5, (void **)&pTest))) {
+                wcsncpy (name, L"D3D11.4", 8); // Creators Update
+              } else if (SUCCEEDED (device->QueryInterface (IID_ID3D11Device4, (void **)&pTest))) {
+                wcsncpy (name, L"D3D11.4", 8);
+              } else if (SUCCEEDED (device->QueryInterface (IID_ID3D11Device3, (void **)&pTest))) {
+                wcsncpy (name, L"D3D11.3", 8);
+              } else if (SUCCEEDED (device->QueryInterface (IID_ID3D11Device2, (void **)&pTest))) {
+                wcsncpy (name, L"D3D11.2", 8);
+              } else if (SUCCEEDED (device->QueryInterface (IID_ID3D11Device1, (void **)&pTest))) {
+                wcsncpy (name, L"D3D11.1", 8);
+              } else {
+                wcsncpy (name, L"D3D11 ", 8);
+              }
             }
           }
         }
@@ -2410,9 +2724,9 @@ SK_RBkEnd_UpdateMonitorName ( SK_RenderBackend_V2::output_s& display,
 #if 1
     if (sk::NVAPI::nv_hardware != false)
     {
-      NvPhysicalGpuHandle nvGpuHandles [NVAPI_MAX_PHYSICAL_GPUS] = { };
-      NvU32               nvGpuCount                             =   0;
-      NvDisplayHandle     nvDisplayHandle;
+      NvPhysicalGpuHandle nvGpuHandles [NVAPI_MAX_PHYSICAL_GPUS] = {     };
+      NvU32               nvGpuCount                             =       0;
+      NvDisplayHandle     nvDisplayHandle                        = nullptr;
       NvU32               nvOutputId  = std::numeric_limits <NvU32>::max ();
       NvU32               nvDisplayId = std::numeric_limits <NvU32>::max ();
 
@@ -2562,6 +2876,43 @@ SK_RBkEnd_UpdateMonitorName ( SK_RenderBackend_V2::output_s& display,
   }
 }
 
+void
+SK_WDDM_CAPS::init (D3DKMT_HANDLE hAdapter)
+{
+  D3DKMT_QUERYADAPTERINFO
+         queryAdapterInfo                       = { };
+         queryAdapterInfo.AdapterHandle         = hAdapter;
+         queryAdapterInfo.Type                  = KMTQAITYPE_DRIVERVERSION;
+         queryAdapterInfo.PrivateDriverData     = &version;
+         queryAdapterInfo.PrivateDriverDataSize = sizeof (D3DKMT_DRIVERVERSION);
+  
+         queryAdapterInfo.Type                  = KMTQAITYPE_WDDM_3_0_CAPS;
+         queryAdapterInfo.PrivateDriverData     = &_3_0;
+         queryAdapterInfo.PrivateDriverDataSize = sizeof (D3DKMT_WDDM_3_0_CAPS);
+  
+  SK_D3DKMT_QueryAdapterInfo (&queryAdapterInfo);
+  
+         queryAdapterInfo.Type                  = KMTQAITYPE_WDDM_2_9_CAPS;
+         queryAdapterInfo.PrivateDriverData     = &_2_9;
+         queryAdapterInfo.PrivateDriverDataSize = sizeof (D3DKMT_WDDM_2_9_CAPS);
+  
+  SK_D3DKMT_QueryAdapterInfo (&queryAdapterInfo);
+  
+         queryAdapterInfo.Type                  = KMTQAITYPE_WDDM_2_7_CAPS;
+         queryAdapterInfo.PrivateDriverData     = &_2_7;
+         queryAdapterInfo.PrivateDriverDataSize = sizeof (D3DKMT_WDDM_2_7_CAPS);
+  
+  SK_D3DKMT_QueryAdapterInfo (&queryAdapterInfo);
+
+  // For Windows 10, just fill-in WDDM 2.9 values using what's available.
+  if (version < KMT_DRIVERVERSION_WDDM_2_9)
+  {
+    _2_9.HwSchEnabled      = _2_7.HwSchEnabled;
+    _2_9.HwSchSupportState = _2_7.HwSchSupported ? DXGK_FEATURE_SUPPORT_STABLE
+                                                 : DXGK_FEATURE_SUPPORT_EXPERIMENTAL;
+  }
+}
+
 extern void
 SK_Display_ResolutionSelectUI (bool bMarkDirty);
 
@@ -2612,8 +2963,7 @@ SK_RenderBackend_V2::assignOutputFromHWND (HWND hWndContainer)
     auto& display = *pOutput;
 
     if (D3DKMTOpenAdapterFromGdiDisplayName == nullptr)
-        D3DKMTOpenAdapterFromGdiDisplayName =
-       (D3DKMTOpenAdapterFromGdiDisplayName_pfn)SK_GetProcAddress (L"gdi32.dll",
+        D3DKMTOpenAdapterFromGdiDisplayName = SK_GetProcAddress (L"gdi32.dll",
        "D3DKMTOpenAdapterFromGdiDisplayName");
 
     if (D3DKMTOpenAdapterFromGdiDisplayName != nullptr)
@@ -2643,9 +2993,11 @@ SK_RenderBackend_V2::assignOutputFromHWND (HWND hWndContainer)
                       display.gdi_name,  _TRUNCATE );
 
       if ( STATUS_SUCCESS ==
-             D3DKMTOpenAdapterFromGdiDisplayName (&openAdapter) )
+             ((D3DKMTOpenAdapterFromGdiDisplayName_pfn)
+               D3DKMTOpenAdapterFromGdiDisplayName)(&openAdapter) )
       {
-        SK_LOG1 ( (L"D3DKMTOpenAdapterFromGdiDisplayName successful for %ws, VidPnSourceId=%lu", display.gdi_name, openAdapter.VidPnSourceId ),
+        SK_LOG1 ( (L"D3DKMTOpenAdapterFromGdiDisplayName successful for %ws, VidPnSourceId=%lu",
+                   display.gdi_name, openAdapter.VidPnSourceId ),
                    __SK_SUBSYSTEM__ );
 
         adapter.d3dkmt        = openAdapter.hAdapter;
@@ -2670,8 +3022,7 @@ SK_RenderBackend_V2::assignOutputFromHWND (HWND hWndContainer)
       if (adapter.d3dkmt != 0)
       {
         if (D3DKMTGetMultiPlaneOverlayCaps == nullptr)
-            D3DKMTGetMultiPlaneOverlayCaps =
-           (D3DKMTGetMultiPlaneOverlayCaps_pfn)SK_GetProcAddress (L"gdi32.dll",
+            D3DKMTGetMultiPlaneOverlayCaps = SK_GetProcAddress (L"gdi32.dll",
            "D3DKMTGetMultiPlaneOverlayCaps");
 
         display.mpo_planes = 0;
@@ -2683,11 +3034,21 @@ SK_RenderBackend_V2::assignOutputFromHWND (HWND hWndContainer)
           caps.hAdapter      = openAdapter.hAdapter;
           caps.VidPnSourceId = adapter.VidPnSourceId;
 
-          if (D3DKMTGetMultiPlaneOverlayCaps (&caps) == (NTSTATUS)0x00000000L) // STATUS_SUCCESS
+          if ( ((D3DKMTGetMultiPlaneOverlayCaps_pfn)
+                 D3DKMTGetMultiPlaneOverlayCaps)(&caps) == STATUS_SUCCESS )
           {
-            display.mpo_planes = caps.MaxPlanes;
+            display.mpo_planes = caps.MaxRGBPlanes; // Don't care about YUV planes, this is a game!
+
+            if (config.display.warn_no_mpo_planes && display.mpo_planes <= 1)
+            {
+              SK_RunOnce (
+                SK_ImGui_Warning (L"MPOs are not active, consider restarting your driver.")
+              );
+            }
           }
         }
+
+        display.wddm_caps.init (adapter.d3dkmt);
       }
     }
 
@@ -2773,125 +3134,9 @@ sizeof (output_s));
   return false;
 }
 
-//HRESULT
-//SK_D3DKMT_OpenAdapterFromLuid (struct _D3DKMT_OPENADAPTERFROMLUID *adapterFromLuid)
-//{
-//  if (! D3DKMTOpenAdapterFromLuid)
-//        D3DKMTOpenAdapterFromLuid =
-//        SK_GetProcAddress (
-//          SK_LoadLibraryW ( L"gdi32.dll" ),
-//            "D3DKMTOpenAdapterFromLuid"
-//                          );
-//
-//  if (D3DKMTOpenAdapterFromLuid != nullptr)
-//  {
-//    return
-//       reinterpret_cast <
-//         PFND3DKMT_OPENADAPTERFROMLUID              > (
-//             D3DKMTOpenAdapterFromLuid) (adapterFromLuid);
-//  }
-//
-//  return
-//    E_NOINTERFACE;
-//}
-//
-//
-//typedef enum _D3DDDICAPS_TYPE {
-//  D3DDDICAPS_DDRAW,
-//  D3DDDICAPS_DDRAW_MODE_SPECIFIC,
-//  D3DDDICAPS_GETFORMATCOUNT,
-//  D3DDDICAPS_GETFORMATDATA,
-//  D3DDDICAPS_GETMULTISAMPLEQUALITYLEVELS,
-//  D3DDDICAPS_GETD3DQUERYCOUNT,
-//  D3DDDICAPS_GETD3DQUERYDATA,
-//  D3DDDICAPS_GETD3D3CAPS,
-//  D3DDDICAPS_GETD3D5CAPS,
-//  D3DDDICAPS_GETD3D6CAPS,
-//  D3DDDICAPS_GETD3D7CAPS,
-//  D3DDDICAPS_GETD3D8CAPS,
-//  D3DDDICAPS_GETD3D9CAPS,
-//  D3DDDICAPS_GETDECODEGUIDCOUNT,
-//  D3DDDICAPS_GETDECODEGUIDS,
-//  D3DDDICAPS_GETDECODERTFORMATCOUNT,
-//  D3DDDICAPS_GETDECODERTFORMATS,
-//  D3DDDICAPS_GETDECODECOMPRESSEDBUFFERINFOCOUNT,
-//  D3DDDICAPS_GETDECODECOMPRESSEDBUFFERINFO,
-//  D3DDDICAPS_GETDECODECONFIGURATIONCOUNT,
-//  D3DDDICAPS_GETDECODECONFIGURATIONS,
-//  D3DDDICAPS_GETVIDEOPROCESSORDEVICEGUIDCOUNT,
-//  D3DDDICAPS_GETVIDEOPROCESSORDEVICEGUIDS,
-//  D3DDDICAPS_GETVIDEOPROCESSORRTFORMATCOUNT,
-//  D3DDDICAPS_GETVIDEOPROCESSORRTFORMATS,
-//  D3DDDICAPS_GETVIDEOPROCESSORRTSUBSTREAMFORMATCOUNT,
-//  D3DDDICAPS_GETVIDEOPROCESSORRTSUBSTREAMFORMATS,
-//  D3DDDICAPS_GETVIDEOPROCESSORCAPS,
-//  D3DDDICAPS_GETPROCAMPRANGE,
-//  D3DDDICAPS_FILTERPROPERTYRANGE,
-//  D3DDDICAPS_GETEXTENSIONGUIDCOUNT,
-//  D3DDDICAPS_GETEXTENSIONGUIDS,
-//  D3DDDICAPS_GETEXTENSIONCAPS,
-//  D3DDDICAPS_GETGAMMARAMPCAPS,
-//  D3DDDICAPS_CHECKOVERLAYSUPPORT,
-//  D3DDDICAPS_DXVAHD_GETVPDEVCAPS,
-//  D3DDDICAPS_DXVAHD_GETVPOUTPUTFORMATS,
-//  D3DDDICAPS_DXVAHD_GETVPINPUTFORMATS,
-//  D3DDDICAPS_DXVAHD_GETVPCAPS,
-//  D3DDDICAPS_DXVAHD_GETVPCUSTOMRATES,
-//  D3DDDICAPS_DXVAHD_GETVPFILTERRANGE,
-//  D3DDDICAPS_GETCONTENTPROTECTIONCAPS,
-//  D3DDDICAPS_GETCERTIFICATESIZE,
-//  D3DDDICAPS_GETCERTIFICATE,
-//  D3DDDICAPS_GET_ARCHITECTURE_INFO,
-//  D3DDDICAPS_GET_SHADER_MIN_PRECISION_SUPPORT,
-//  D3DDDICAPS_GET_MULTIPLANE_OVERLAY_CAPS,
-//  D3DDDICAPS_GET_MULTIPLANE_OVERLAY_FILTER_RANGE,
-//  D3DDDICAPS_GET_MULTIPLANE_OVERLAY_GROUP_CAPS,
-//  D3DDDICAPS_GET_SIMPLE_INSTANCING_SUPPORT,
-//  D3DDDICAPS_GET_MARKER_CAPS
-//} D3DDDICAPS_TYPE;
-
-
-
 const char*
 SK_RenderBackend_V2::output_s::signal_info_s::timing_s::video_standard_s::toStr (void)
 {
-  typedef enum _D3DKMDT_VIDEO_SIGNAL_STANDARD
-  {
-    D3DKMDT_VSS_UNINITIALIZED,
-    D3DKMDT_VSS_VESA_DMT,
-    D3DKMDT_VSS_VESA_GTF,
-    D3DKMDT_VSS_VESA_CVT,
-    D3DKMDT_VSS_IBM,
-    D3DKMDT_VSS_APPLE,
-    D3DKMDT_VSS_NTSC_M,
-    D3DKMDT_VSS_NTSC_J,
-    D3DKMDT_VSS_NTSC_443,
-    D3DKMDT_VSS_PAL_B,
-    D3DKMDT_VSS_PAL_B1,
-    D3DKMDT_VSS_PAL_G,
-    D3DKMDT_VSS_PAL_H,
-    D3DKMDT_VSS_PAL_I,
-    D3DKMDT_VSS_PAL_D,
-    D3DKMDT_VSS_PAL_N,
-    D3DKMDT_VSS_PAL_NC,
-    D3DKMDT_VSS_SECAM_B,
-    D3DKMDT_VSS_SECAM_D,
-    D3DKMDT_VSS_SECAM_G,
-    D3DKMDT_VSS_SECAM_H,
-    D3DKMDT_VSS_SECAM_K,
-    D3DKMDT_VSS_SECAM_K1,
-    D3DKMDT_VSS_SECAM_L,
-    D3DKMDT_VSS_SECAM_L1,
-    D3DKMDT_VSS_EIA_861,
-    D3DKMDT_VSS_EIA_861A,
-    D3DKMDT_VSS_EIA_861B,
-    D3DKMDT_VSS_PAL_K,
-    D3DKMDT_VSS_PAL_K1,
-    D3DKMDT_VSS_PAL_L,
-    D3DKMDT_VSS_PAL_M,
-    D3DKMDT_VSS_OTHER
-  } D3DKMDT_VIDEO_SIGNAL_STANDARD;
-
   static std::unordered_map
     < D3DKMDT_VIDEO_SIGNAL_STANDARD, const char * >
   standard_names =
@@ -3116,47 +3361,6 @@ SK_RenderBackend_V2::updateOutputTopology (void)
         adapterDesc.AdapterLuid;
     }
 
-
-#if 0
-    if (adapter.d3dkmt == 0)
-    {
-      D3DKMT_OPENADAPTERFROMLUID
-                 adapterFromLuid             = {          };
-                 adapterFromLuid.AdapterLuid = adapter.luid;
-
-      if (SUCCEEDED (SK_D3DKMT_OpenAdapterFromLuid (&adapterFromLuid)))
-      {
-        adapter.d3dkmt = adapterFromLuid.hAdapter;
-      }
-    }
-#endif
-
-  //if (SUCCEEDED (D3DKMTGetDeviceState (&getDeviceState)))
-  //{
-  //  bQueueFull =
-  //    getDeviceState.PresentQueueState.bQueuedPresentLimitReached;
-  //
-  //  // Get Present Statistics (App's VidPn)
-  //  getDeviceState.StateType     = D3DKMT_DEVICEPRESENT_STATE;
-  //  getDeviceState.VidPnSourceId = 0; // ?
-  //
-  //  if (SUCCEEDED (D3DKMTGetDeviceState (&getDeviceState)))
-  //  {
-  //    D3DKMT_PRESENT_STATS
-  //           present_stats = getDeviceState.PresentState;
-  //
-  //
-  //    getDeviceState.StateType     = D3DKMT_DEVICESTATE_PRESENT_DWM;
-  //    getDeviceState.VidPnSourceId = 0; // ?
-  //
-  //    if (SUCCEEDED (D3DKMTGetDeviceState (&getDeviceState)))
-  //    {
-  //      D3DKMT_PRESENT_STATS_DWM
-  //         dwm_present_stats = getDeviceState.PresentStateDWM;
-  //    }
-  //  }
-  //}
-
     SK_ComQIPtr <IDXGIFactory4>
         pFactory4   (pFactory1);
     if (pFactory4 != nullptr)
@@ -3303,6 +3507,17 @@ SK_RenderBackend_V2::updateOutputTopology (void)
             display.nvapi.gpu_handle     = nvGpuHandles [0];
             display.nvapi.display_id     = nvDisplayId;
             display.nvapi.output_id      = nvOutputId;
+
+            NV_GET_VRR_INFO         vrr_info     = { NV_GET_VRR_INFO_VER         };
+            NV_MONITOR_CAPABILITIES monitor_caps = { NV_MONITOR_CAPABILITIES_VER };
+                                    monitor_caps.
+                                        infoType =   NV_MONITOR_CAPS_TYPE_GENERIC;
+
+            SK_NvAPI_Disp_GetVRRInfo             (nvDisplayId, &vrr_info);
+            SK_NvAPI_DISP_GetMonitorCapabilities (nvDisplayId, &monitor_caps);
+
+            display.nvapi.monitor_caps = monitor_caps;
+            display.nvapi.vrr_enabled  = vrr_info.bIsVRREnabled;
           }
         }
 
@@ -3793,338 +4008,6 @@ SK_RenderBackend_V2::getContainingOutput (const RECT& rkRect)
   return pOutput;
 }
 
-volatile ULONG64 SK_Reflex_LastFrameMarked   = 0;
-volatile LONG    SK_RenderBackend::flip_skip = 0;
-
-bool
-SK_RenderBackend_V2::setLatencyMarkerNV (NV_LATENCY_MARKER_TYPE marker)
-{
-  NvAPI_Status ret =
-    NVAPI_INVALID_CONFIGURATION;
-
-  if (device.p    != nullptr &&
-      swapchain.p != nullptr)
-  {
-    // Avert your eyes... time to check if Device and SwapChain are consistent
-    //
-    auto pDev11 = getDevice <ID3D11Device> ();
-    auto pDev12 = getDevice <ID3D12Device> ();
-
-    if (! (pDev11 || pDev12))
-      return false; // Uh... what?
-
-    SK_ComQIPtr <IDXGISwapChain> pSwapChain (swapchain.p);
-
-    if (pSwapChain.p != nullptr)
-    {
-      SK_ComPtr                  <ID3D11Device>           pSwapDev11;
-      pSwapChain->GetDevice ( IID_ID3D11Device, (void **)&pSwapDev11.p );
-      SK_ComPtr                  <ID3D12Device>           pSwapDev12;
-      pSwapChain->GetDevice ( IID_ID3D12Device, (void **)&pSwapDev12.p );
-      if (! ((pDev11.p != nullptr && pDev11.IsEqualObject (pSwapDev11.p)) ||
-             (pDev12.p != nullptr && pDev12.IsEqualObject (pSwapDev12.p))))
-      {
-        return false; // Nope, let's get the hell out of here!
-      }
-    }
-
-    if (sk::NVAPI::nv_hardware)
-    {
-      NV_LATENCY_MARKER_PARAMS
-        markerParams            = {                          };
-        markerParams.version    = NV_LATENCY_MARKER_PARAMS_VER;
-        markerParams.markerType = marker;
-        markerParams.frameID    = static_cast <NvU64> (
-             ReadULong64Acquire (&frames_drawn)       );
-
-      ret =
-        NvAPI_D3D_SetLatencyMarker (device.p, &markerParams);
-    }
-
-    if ( marker == RENDERSUBMIT_END /*||
-         marker == RENDERSUBMIT_START*/ )
-    {
-      latency.submitQueuedFrame (
-        SK_ComQIPtr <IDXGISwapChain1> (pSwapChain)
-      );
-    }
-  }
-
-  return
-    ( ret == NVAPI_OK );
-}
-
-bool
-SK_RenderBackend_V2::getLatencyReportNV (NV_LATENCY_RESULT_PARAMS* pGetLatencyParams)
-{
-  if (! sk::NVAPI::nv_hardware)
-    return false;
-
-  if (device.p == nullptr)
-    return false;
-
-  NvAPI_Status ret =
-    NvAPI_D3D_GetLatency (device.p, pGetLatencyParams);
-
-  return
-    ( ret == NVAPI_OK );
-}
-
-
-void
-SK_RenderBackend_V2::driverSleepNV (int site)
-{
-  if (! sk::NVAPI::nv_hardware)
-    return;
-
-  if (! device.p)
-    return;
-
-  if (site == 2)
-    setLatencyMarkerNV (INPUT_SAMPLE);
-
-  if (site == config.nvidia.sleep.enforcement_site)
-  {
-    static bool
-      valid = true;
-
-    if (! valid)
-      return;
-
-    if (config.nvidia.sleep.frame_interval_us != 0)
-    {
-      ////extern float __target_fps;
-      ////
-      ////if (__target_fps > 0.0)
-      ////  config.nvidia.sleep.frame_interval_us = static_cast <UINT> ((1000.0 / __target_fps) * 1000.0);
-      ////else
-      config.nvidia.sleep.frame_interval_us = 0;
-    }
-
-    NV_SET_SLEEP_MODE_PARAMS
-      sleepParams = {                          };
-      sleepParams.version               = NV_SET_SLEEP_MODE_PARAMS_VER;
-      sleepParams.bLowLatencyBoost      = config.nvidia.sleep.low_latency_boost;
-      sleepParams.bLowLatencyMode       = config.nvidia.sleep.low_latency;
-      sleepParams.minimumIntervalUs     = config.nvidia.sleep.frame_interval_us;
-      sleepParams.bUseMarkersToOptimize = config.nvidia.sleep.marker_optimization;
-
-    static NV_SET_SLEEP_MODE_PARAMS
-      lastParams = { 1, true, true, 69, 0, { 0 } };
-
-    if (! config.nvidia.sleep.enable)
-    {
-      sleepParams.bLowLatencyBoost      = false;
-      sleepParams.bLowLatencyMode       = false;
-      sleepParams.bUseMarkersToOptimize = false;
-      sleepParams.minimumIntervalUs     = 0;
-    }
-
-    static volatile ULONG64 _frames_drawn =
-      std::numeric_limits <ULONG64>::max ();
-    if ( ReadULong64Acquire (&_frames_drawn) ==
-         ReadULong64Acquire  (&frames_drawn) )
-      return;
-
-    if ( lastParams.bLowLatencyBoost      != sleepParams.bLowLatencyBoost  ||
-         lastParams.bLowLatencyMode       != sleepParams.bLowLatencyMode   ||
-         lastParams.minimumIntervalUs     != sleepParams.minimumIntervalUs ||
-         lastParams.bUseMarkersToOptimize != sleepParams.bUseMarkersToOptimize )
-    {
-      if ( NVAPI_OK !=
-             NvAPI_D3D_SetSleepMode (
-               device.p, &sleepParams
-             )
-         ) valid = false;
-
-      else
-      {
-        //NV_GET_SLEEP_STATUS_PARAMS
-        //  getParams         = {                            };
-        //  getParams.version = NV_GET_SLEEP_STATUS_PARAMS_VER;
-
-        //NvAPI_D3D_Sleep (device.p);
-        //
-        //if ( NVAPI_OK ==
-        //       NvAPI_D3D_GetSleepStatus (
-        //         device.p, &getParams
-        //       )
-        //   )
-        //{
-        //  config.nvidia.sleep.low_latency = getParams.bLowLatencyMode;
-        //
-        //  if (! config.nvidia.sleep.low_latency)
-        //        config.nvidia.sleep.low_latency_boost = false;
-        //
-        //  lastParams.bLowLatencyMode  = getParams.bLowLatencyMode;
-        //  lastParams.bLowLatencyBoost = config.nvidia.sleep.low_latency_boost;
-        //}
-
-        lastParams = sleepParams;
-      }
-    }
-
-    if (config.nvidia.sleep.enable)
-    {
-      if ( NVAPI_OK != NvAPI_D3D_Sleep (device.p) )
-        valid = false;
-    }
-
-    WriteULong64Release (&_frames_drawn,
-      ReadULong64Acquire (&frames_drawn));
-
-    if ((! valid) && ( api == SK_RenderAPI::D3D11 ||
-                       api == SK_RenderAPI::D3D12 ))
-    {
-      SK_LOG0 ( ( L"NVIDIA Reflex Sleep Invalid State" ),
-                  __SK_SUBSYSTEM__ );
-    }
-  }
-};
-
-void
-SK_NV_AdaptiveSyncControl (void)
-{
-  if (sk::NVAPI::nv_hardware != false)
-  {
-    static auto& rb =
-      SK_GetCurrentRenderBackend ();
-
-    for ( auto& display : rb.displays )
-    {
-      if (display.monitor == rb.monitor)
-      {
-        static NV_GET_ADAPTIVE_SYNC_DATA
-                     getAdaptiveSync   = { };
-
-        static DWORD lastChecked       = 0;
-        static NvU64 lastFlipTimeStamp = 0;
-        static NvU64 lastFlipFrame     = 0;
-        static double   dFlipPrint     = 0.0;
-
-        if (SK_timeGetTime () > lastChecked + 333)
-        {                       lastChecked = SK_timeGetTime ();
-
-          ZeroMemory (&getAdaptiveSync,  sizeof (NV_GET_ADAPTIVE_SYNC_DATA));
-                       getAdaptiveSync.version = NV_GET_ADAPTIVE_SYNC_DATA_VER;
-
-          if ( NVAPI_OK ==
-                 NvAPI_DISP_GetAdaptiveSyncData (
-                   display.nvapi.display_id,
-                           &getAdaptiveSync )
-             )
-          {
-            NvU64 deltaFlipTime     = getAdaptiveSync.lastFlipTimeStamp - lastFlipTimeStamp;
-                  lastFlipTimeStamp = getAdaptiveSync.lastFlipTimeStamp;
-
-            if (deltaFlipTime > 0)
-            {
-              double dFlipRate  =
-                static_cast <double> (SK_GetFramesDrawn () - lastFlipFrame) *
-              ( static_cast <double> (deltaFlipTime) /
-                static_cast <double> (SK_QpcFreq) );
-
-                 dFlipPrint = dFlipRate;
-              lastFlipFrame = SK_GetFramesDrawn ();
-            }
-
-            rb.gsync_state.update (true);
-          }
-
-          else lastChecked = SK_timeGetTime () + 333;
-        }
-
-        ImGui::Text       ("Adaptive Sync Status for %hs", SK_WideCharToUTF8 (rb.display_name).c_str ());
-        ImGui::Separator  ();
-        ImGui::BeginGroup ();
-        ImGui::Text       ("Current State:");
-        if (! getAdaptiveSync.bDisableAdaptiveSync)
-        {
-          ImGui::Text     ("Frame Splitting:");
-
-          if (getAdaptiveSync.maxFrameInterval != 0)
-            ImGui::Text   ("Max Frame Interval:");
-        }
-        ImGui::Text       ("");
-      //ImGui::Text       ("Effective Refresh:");
-        ImGui::EndGroup   ();
-        ImGui::SameLine   ();
-        ImGui::BeginGroup ();
-
-        ImGui::Text       ( getAdaptiveSync.bDisableAdaptiveSync   ? "Disabled" :
-                                             rb.gsync_state.active ? "Active"   :
-                                                                     "Inactive" );
-        if (! getAdaptiveSync.bDisableAdaptiveSync)
-        {
-          ImGui::Text     ( getAdaptiveSync.bDisableFrameSplitting ? "Disabled" :
-                                                                     "Enabled" );
-
-          if (getAdaptiveSync.maxFrameInterval != 0)
-            ImGui::Text   ( "%#6.2f Hz ",
-                             1000000.0 / static_cast <double> (getAdaptiveSync.maxFrameInterval) );
-        }
-        ImGui::Text       ( "" );
-
-      //ImGui::Text       ( "%#6.2f Hz ", dFlipPrint);
-      //ImGui::Text       ( "\t\t\t\t\t\t\t\t" );
-        
-        ImGui::EndGroup   ();
-        ImGui::SameLine   ();
-        ImGui::BeginGroup ();
-
-        static bool secret_menu = false;
-
-        if (ImGui::IsItemClicked (1))
-          secret_menu = true;
-
-        bool toggle_sync  = false;
-        bool toggle_split = false;
-
-        if (secret_menu)
-        {
-          toggle_sync =
-            ImGui::Button (
-              getAdaptiveSync.bDisableAdaptiveSync == 0x0 ?
-                            "Disable Adaptive Sync"       :
-                             "Enable Adaptive Sync" );
-
-          toggle_split =
-            ImGui::Button (
-              getAdaptiveSync.bDisableFrameSplitting == 0x0 ?
-                            "Disable Frame Splitting"       :
-                             "Enable Frame Splitting" );
-        }
-
-        ImGui::EndGroup   ();
-
-        if (toggle_sync || toggle_split)
-        {
-          NV_SET_ADAPTIVE_SYNC_DATA
-                       setAdaptiveSync;
-          ZeroMemory (&setAdaptiveSync,  sizeof (NV_SET_ADAPTIVE_SYNC_DATA));
-                       setAdaptiveSync.version = NV_SET_ADAPTIVE_SYNC_DATA_VER;
-
-          setAdaptiveSync.bDisableAdaptiveSync   =
-            toggle_sync ? !getAdaptiveSync.bDisableAdaptiveSync :
-                           getAdaptiveSync.bDisableAdaptiveSync;
-          setAdaptiveSync.bDisableFrameSplitting =
-            toggle_split ? !getAdaptiveSync.bDisableFrameSplitting :
-                            getAdaptiveSync.bDisableFrameSplitting;
-
-          NvAPI_DISP_SetAdaptiveSyncData (
-            display.nvapi.display_id,
-                    &setAdaptiveSync
-          );
-        }
-        break;
-      }
-    }
-  }
-}
-
-
-
-
 /* size of a form name string */
 #define CCHFORMNAME 32
 
@@ -4188,6 +4071,9 @@ ChangeDisplaySettingsExA_Detour (
 {
   SK_LOG_FIRST_CALL
 
+  if (config.display.force_windowed)
+    return DISP_CHANGE_SUCCESSFUL;
+
 
   // NOP this sucker, we have borderless flip model in GL!
   if (config.render.gl.disable_fullscreen && config.apis.dxgi.d3d11.hook)
@@ -4200,6 +4086,9 @@ ChangeDisplaySettingsExA_Detour (
 
       SK_GL_SetVirtualDisplayMode (hWnd, (dwFlags & CDS_UPDATEREGISTRY) || (dwFlags & CDS_FULLSCREEN), Width, Height);
     }
+
+    if (SK_GL_OnD3D11)
+      return DISP_CHANGE_SUCCESSFUL;
   }
 
   static bool called = false;
@@ -4273,6 +4162,10 @@ ChangeDisplaySettingsExW_Detour (
   SK_LOG_FIRST_CALL
 
 
+  if (config.display.force_windowed)
+    return DISP_CHANGE_SUCCESSFUL;
+
+
   // NOP this sucker, we have borderless flip model in GL!
   if (config.render.gl.disable_fullscreen && config.apis.dxgi.d3d11.hook)
   {
@@ -4285,7 +4178,8 @@ ChangeDisplaySettingsExW_Detour (
       SK_GL_SetVirtualDisplayMode (hWnd, (dwFlags & CDS_UPDATEREGISTRY) || (dwFlags & CDS_FULLSCREEN), Width, Height);
     }
 
-    //return DISP_CHANGE_SUCCESSFUL;
+    if (SK_GL_OnD3D11)
+      return DISP_CHANGE_SUCCESSFUL;
   }
 
   DEVMODEW dev_mode        = { };
@@ -4424,16 +4318,28 @@ SK_Render_InitializeSharedCVars (void)
   return pCommandProc;
 }
 
-void
+bool
 SK_Display_ApplyDesktopResolution (MONITORINFOEX& mi)
 {
-  if (! config.display.resolution.override.isZero ())
+  if ((! config.display.resolution.override.isZero ()) ||
+         config.display.refresh_rate > 0.0f)
   {
     DEVMODEW devmode              = {               };
              devmode.dmSize       = sizeof (DEVMODEW);
-             devmode.dmFields     = DM_PELSWIDTH | DM_PELSHEIGHT;
-             devmode.dmPelsWidth  = config.display.resolution.override.x;
-             devmode.dmPelsHeight = config.display.resolution.override.y;
+
+    if (! config.display.resolution.override.isZero ())
+    {
+      devmode.dmFields     |= DM_PELSWIDTH | DM_PELSHEIGHT;
+      devmode.dmPelsWidth   = config.display.resolution.override.x;
+      devmode.dmPelsHeight  = config.display.resolution.override.y;
+    }
+
+    if (config.display.refresh_rate > 0.0f)
+    {
+      devmode.dmFields           |= DM_DISPLAYFREQUENCY;
+      devmode.dmDisplayFrequency  =
+        static_cast <DWORD> (std::ceilf (config.display.refresh_rate));
+    }
 
     if ( DISP_CHANGE_SUCCESSFUL ==
            SK_ChangeDisplaySettingsEx (
@@ -4448,7 +4354,44 @@ SK_Display_ApplyDesktopResolution (MONITORINFOEX& mi)
          )
       {
         config.display.resolution.applied = true;
+        return true;
       }
     }
   }
+
+  return false;
 };
+
+void
+SK_Vulkan_DisableThirdPartyLayers (void)
+{
+  SetEnvironmentVariableW (L"DISABLE_VK_LAYER_VALVE_steam_fossilize_1", L"1");
+  SetEnvironmentVariableW (L"DISABLE_VULKAN_OBS_CAPTURE",               L"1");
+
+//SetEnvironmentVariableW (L"DISABLE_VK_LAYER_VALVE_steam_overlay_1",   L"0");
+//SetEnvironmentVariableW (L"ENABLE_VK_LAYER_VALVE_steam_overlay_1",    L"1");
+//SetEnvironmentVariableW (L"SteamNoOverlayUIDrawing",                  L"1");
+//SetEnvironmentVariableW (L"DISABLE_RTSS_LAYER",                       L"1");
+}
+
+bool
+SK_RenderBackend_V2::resetTemporaryDisplayChanges (void)
+{
+  if (config.render.dxgi.temporary_dwm_hdr)
+  {
+    for ( auto pHDROutput : hdr_enabled_displays )
+    {
+      SK_Display_DisableHDR (pHDROutput);
+    }
+  }
+
+  if (config.display.resolution.applied)
+  {
+    return 
+      SK_ChangeDisplaySettingsEx (
+        nullptr, nullptr,
+          0, CDS_RESET, nullptr  ) == DISP_CHANGE_SUCCESSFUL;
+  }
+
+  return false;
+}

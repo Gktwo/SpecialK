@@ -23,6 +23,7 @@
 #define __SK__DXGI_SWAPCHAIN_H__
 
 #include <SpecialK/render/dxgi/dxgi_interfaces.h>
+#include <SpecialK/render/dxgi/dxgi_util.h>
 
 extern volatile LONG SK_DXGI_LiveWrappedSwapChains;
 extern volatile LONG SK_DXGI_LiveWrappedSwapChain1s;
@@ -60,9 +61,15 @@ IWrapDXGISwapChain : IDXGISwapChain4
     {
       hWnd_     = sd.OutputWindow;
       waitable_ = sd.Flags & DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
+
+      state_cache_s state_cache;
       
       if (sd.BufferDesc.Format != DXGI_FORMAT_R16G16B16A16_FLOAT)
-              lastNonHDRFormat  = sd.BufferDesc.Format;
+        state_cache.lastNonHDRFormat = sd.BufferDesc.Format;
+
+      SK_DXGI_SetPrivateData ( pReal, SKID_DXGI_SwapChain_StateCache,
+                                                  sizeof (state_cache_s),
+                                                         &state_cache );
     }
 
     IUnknown *pPromotion = nullptr;
@@ -111,6 +118,25 @@ IWrapDXGISwapChain : IDXGISwapChain4
     flip_model.native = bOriginallyFlip;
 
     SetPrivateDataInterface (IID_IUnwrappedDXGISwapChain, pReal);
+
+    if (! d3d12_)
+    {
+      SK_ComPtr <ID3D11DeviceContext> pDevCtx;
+      pDevice->GetImmediateContext  (&pDevCtx);
+
+      SK_ComQIPtr <ID3D11DeviceContext1>
+          pDevCtx1 (pDevCtx);
+      if (pDevCtx1.p != nullptr)
+      {
+        if (pDevice->GetFeatureLevel () >= D3D_FEATURE_LEVEL_11_1)
+        {
+          pDevice->CheckFeatureSupport (
+             D3D11_FEATURE_D3D11_OPTIONS, &_d3d11_feature_opts, 
+               sizeof (D3D11_FEATURE_DATA_D3D11_OPTIONS)
+          );
+        }
+      }
+    }
   }
 
   IWrapDXGISwapChain ( ID3D11Device         *pDevice,
@@ -133,8 +159,14 @@ IWrapDXGISwapChain : IDXGISwapChain4
       hWnd_     = sd.OutputWindow;
       waitable_ = sd.Flags & DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
 
+      state_cache_s state_cache;
+
       if (sd.BufferDesc.Format != DXGI_FORMAT_R16G16B16A16_FLOAT)
-              lastNonHDRFormat  = sd.BufferDesc.Format;
+        state_cache.lastNonHDRFormat  = sd.BufferDesc.Format;
+
+      SK_DXGI_SetPrivateData ( pReal, SKID_DXGI_SwapChain_StateCache,
+                                            sizeof (state_cache_s),
+                                                   &state_cache );
     }
 
     IUnknown *pPromotion = nullptr;
@@ -177,6 +209,25 @@ IWrapDXGISwapChain : IDXGISwapChain4
     flip_model.native = bOriginallyFlip;
 
     SetPrivateDataInterface (IID_IUnwrappedDXGISwapChain, pReal);
+
+    if (! d3d12_)
+    {
+      SK_ComPtr <ID3D11DeviceContext> pDevCtx;
+      pDevice->GetImmediateContext  (&pDevCtx);
+
+      SK_ComQIPtr <ID3D11DeviceContext1>
+        pDevCtx1 (pDevCtx);
+      if (pDevCtx1.p != nullptr)
+      {
+        if (pDevice->GetFeatureLevel () >= D3D_FEATURE_LEVEL_11_1)
+        {
+          pDevice->CheckFeatureSupport (
+             D3D11_FEATURE_D3D11_OPTIONS, &_d3d11_feature_opts, 
+               sizeof (D3D11_FEATURE_DATA_D3D11_OPTIONS)
+          );
+        }
+      }
+    }
   }
 
 
@@ -282,38 +333,25 @@ IWrapDXGISwapChain : IDXGISwapChain4
   UINT                  gameHeight_     = 0;
   BOOL                  fakeFullscreen_ = FALSE;
   bool                  notFaking_      = true;
-  DXGI_FORMAT           lastRequested_  = DXGI_FORMAT_UNKNOWN;
-  DXGI_FORMAT           lastNonHDRFormat= DXGI_FORMAT_UNKNOWN;
-  DXGI_COLOR_SPACE_TYPE lastColorSpace_ = DXGI_COLOR_SPACE_RESERVED;
+
+  struct state_cache_s {
+    DXGI_FORMAT           lastRequested_  = DXGI_FORMAT_UNKNOWN;
+    DXGI_FORMAT           lastNonHDRFormat= DXGI_FORMAT_UNKNOWN;
+    DXGI_COLOR_SPACE_TYPE lastColorSpace_ = DXGI_COLOR_SPACE_RESERVED;
+
+    UINT                  lastWidth       = 0;
+    UINT                  lastHeight      = 0;
+    DXGI_FORMAT           lastFormat      = DXGI_FORMAT_UNKNOWN;
+    UINT                  lastBufferCount = 0;
+
+    bool                  _stalebuffers   = false;
+  };
 
   std::recursive_mutex  _backbufferLock;
   std::unordered_map <UINT, SK_ComPtr <ID3D11Texture2D>>
                         _backbuffers;
-  bool                  _stalebuffers   = false;
 
-  UINT                  lastWidth       = 0;
-  UINT                  lastHeight      = 0;
-  DXGI_FORMAT           lastFormat      = DXGI_FORMAT_UNKNOWN;
-  UINT                  lastBufferCount = 0;
-
-  ///struct {
-  ///  DXGI_SWAP_CHAIN_DESC requested;
-  ///  DXGI_SWAP_CHAIN_DESC actual;
-  ///} creation_desc;
-  ///
-  ///bool wasOrignallysRGB (void)
-  ///{
-  ///  return
-  ///    DirectX::IsSRGB (creation_desc.requested.BufferDesc.Format);
-  ///}
-  ///
-  ///bool wasOriginallyFlip (void)
-  ///{
-  ///  return
-  ///    SK_DXGI_IsFlipModelSwapChain (creation_desc.requested);
-  ///}
-  ///
-  ///UINT uiOriginalBltSampleCount = 0UL;
+  D3D11_FEATURE_DATA_D3D11_OPTIONS _d3d11_feature_opts = { };
 
   // Shared logic between Present (...) and Present1 (...)
   int                     PresentBase (void);

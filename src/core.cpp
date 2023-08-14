@@ -25,6 +25,9 @@
 #include <SpecialK/render/d3d9/d3d9_backend.h>
 #include <SpecialK/render/d3d11/d3d11_core.h>
 #include <SpecialK/render/d3d12/d3d12_interfaces.h>
+#include <SpecialK/render/dstorage/dstorage.h>
+#include <SpecialK/render/dxgi/dxgi_util.h>
+#include <reflex/pclstats.h>
 
 #include <SpecialK/storefront/epic.h>
 
@@ -36,8 +39,6 @@
 #include <SpecialK/commands/update.inl>
 
 #include <filesystem>
-
-#include <Aux_ulib.h>
 
 
 #ifdef _WIN64
@@ -265,6 +266,11 @@ SK_LoadGPUVendorAPIs (void)
 
   if (nvapi_init)
   {
+    if (config.apis.NvAPI.vulkan_bridge != -1)
+    {
+      SK_NvAPI_EnableVulkanBridge (config.apis.NvAPI.vulkan_bridge);
+    }
+
     const int num_sli_gpus =
       sk::NVAPI::CountSLIGPUs ();
 
@@ -701,7 +707,7 @@ WaitForInit (void)
     }
 
     for (int i = 0; i < _SpinMax && (ReadPointerAcquire (&hInitThread) != INVALID_HANDLE_VALUE); i++)
-      ;
+      YieldProcessor ();
 
     HANDLE hWait =
       ReadPointerAcquire (&hInitThread);
@@ -933,6 +939,7 @@ void BasicInit (void)
   SK_CPU_InstallHooks       ();
   SK_NvAPI_PreInitHDR       ();
   SK_NvAPI_InitializeHDR    ();
+  SK_DStorage_Init          ();
 
   ////// For the global injector, when not started by SKIM, check its version
   ////if ( (SK_IsInjected () && (! SK_IsSuperSpecialK ())) )
@@ -1049,6 +1056,9 @@ DllThread (LPVOID user)
                               INVALID_HANDLE_VALUE );
       WriteULongRelease   (                       &dwInitThreadId,
                               0                    );
+
+      // Implicitly load ReShade (ReShade{32|64}.dll) if it exists
+      SK_ReShade_LoadIfPresent  ();
 
       // Load user-defined DLLs (Lazy)
       SK_RunLHIfBitness ( 64, SK_LoadLazyImports64 (),
@@ -1509,26 +1519,29 @@ SK_EstablishRootPath (void)
       }
     }
 
-    if ( CRegKey
-           hkInstallPath; (! bEnvironmentDefinedPath) && ERROR_SUCCESS ==
-           hkInstallPath.Open ( HKEY_CURRENT_USER,
-                LR"(Software\Kaldaien\Special K)" )
-        )
+    if (! bEnvironmentDefinedPath)
     {
-      if ( ERROR_SUCCESS ==
-             hkInstallPath.QueryStringValue ( L"Path",
-            wszInstallPath,                  &ulPathLen )
-         )
+      if ( CRegKey
+             hkInstallPath; (! bEnvironmentDefinedPath) && ERROR_SUCCESS ==
+             hkInstallPath.Open ( HKEY_CURRENT_USER,
+                  LR"(Software\Kaldaien\Special K)" )
+          )
       {
-        bRegistryDefinedPath = true;
-
-        wcsncpy_s ( SKX_GetInstallPath (), MAX_PATH,
-                        wszInstallPath,   _TRUNCATE );
-
-        // Couldn't create the directory, try something else
-        if (! SK_CreateDirectoriesEx (SKX_GetInstallPath (), false))
+        if ( ERROR_SUCCESS ==
+               hkInstallPath.QueryStringValue ( L"Path",
+              wszInstallPath,                  &ulPathLen )
+           )
         {
-          bRegistryDefinedPath = false;
+          bRegistryDefinedPath = true;
+
+          wcsncpy_s ( SKX_GetInstallPath (), MAX_PATH,
+                          wszInstallPath,   _TRUNCATE );
+
+          // Couldn't create the directory, try something else
+          if (! SK_CreateDirectoriesEx (SKX_GetInstallPath (), false))
+          {
+            bRegistryDefinedPath = false;
+          }
         }
       }
     }
@@ -1598,6 +1611,14 @@ SK_StartupCore (const wchar_t* backend, void* callback)
 {
  try
  {
+   AllowSetForegroundWindow (GetCurrentProcessId ());
+
+  if ( SK_GetProcAddress ( L"NtDll",
+                            "wine_get_version" ) != nullptr )
+  {
+    config.compatibility.using_wine = true;
+  }
+
   InstructionSet::deferredInit ();
 
   // .NET Applications might be inside of managed code, so perform
@@ -1944,10 +1965,16 @@ SK_StartupCore (const wchar_t* backend, void* callback)
 
   if (! SK_IsInjected ())
   {
+    static constexpr auto architecture =
+      SK_RunLHIfBitness (64, L"x64", L"Win32");
+
     for (auto& import : imports->imports)
     {
-      if (            import.role != nullptr &&
-           backend == import.role->get_value () )
+      if (                         import.role != nullptr &&
+           0 == _wcsicmp (backend, import.role->get_value ().c_str ()) &&
+                           import.architecture != nullptr &&
+           0 == _wcsicmp (architecture,
+                           import.architecture->get_value ().c_str ()) )
       {
         dll_log->LogEx (true, L" Loading proxy %s.dll:    ", backend);
         wcsncpy_s ( dll_name,                                MAX_PATH,
@@ -2173,6 +2200,9 @@ SK_StartupCore (const wchar_t* backend, void* callback)
       SK_D3D9_QuickHook ();
     }
 
+    void SK_Streamline_InitBypass (void);
+         SK_Streamline_InitBypass ();
+
     InterlockedExchangePointer (
       const_cast <void **> (&hInitThread),
       SK_Thread_CreateEx ( DllThread, nullptr,
@@ -2273,15 +2303,17 @@ SK_Win32_CreateDummyWindow (HWND hWndParent)
                           L"Special K Dummy Window Class",
                             &wc_existing ) )
   {
-    RECT                              rect = { };
-    GetWindowRect (game_window.hWnd, &rect);
+    RECT                          rect = { };
+    if (IsWindow (hWndParent))
+      GetWindowRect (hWndParent, &rect);
 
     HWND hWnd =
       CreateWindowExW ( WS_EX_NOACTIVATE | WS_EX_NOPARENTNOTIFY,
                             L"Special K Dummy Window Class",
                             L"Special K Dummy Window",
                             //IsWindow (hWndParent) ? WS_CHILD : WS_CLIPSIBLINGS,
-                                      WS_POPUP | WS_CLIPSIBLINGS | WS_CLIPCHILDREN,
+                                      WS_POPUP        | WS_DISABLED |
+                                      WS_CLIPSIBLINGS | WS_CLIPCHILDREN,
                                               rect.left,               rect.top,
                                  rect.right - rect.left, rect.bottom - rect.top,
                         HWND_DESKTOP/*hWndParent*/, nullptr,
@@ -2307,16 +2339,13 @@ SK_Win32_CreateDummyWindow (HWND hWndParent)
           {
             HWND hWnd = (HWND)user;
 
-          //SetForegroundWindow (hWnd);
-          //SetFocus            (hWnd);
-          //SetActiveWindow     (hWnd);
-            ShowWindow          (hWnd, SW_HIDE);
+            ShowWindow (hWnd, SW_HIDE);
 
-            MSG                 msg = { };
-            while (GetMessage (&msg, 0, 0, 0))
+            MSG                     msg = { };
+            while (SK_GetMessageW (&msg, 0, 0, 0))
             {
-              TranslateMessage (&msg);
-              DispatchMessage  (&msg);
+              SK_TranslateMessage (&msg);
+              SK_DispatchMessageW (&msg);
 
               if (msg.message == WM_DESTROY && msg.hwnd == hWnd)
               {
@@ -2413,8 +2442,7 @@ bool
 __stdcall
 SK_ShutdownCore (const wchar_t* backend)
 {
-  if (SK_IsInjected ())
-    SK_Inject_BroadcastExitNotify ();
+  SK_Inject_BroadcastExitNotify ();
 
   SK_DisableApplyQueuedHooks ();
 
@@ -2449,20 +2477,21 @@ SK_ShutdownCore (const wchar_t* backend)
 
   SK_Win32_DestroyBackgroundWindow (); // Destroy the aspect ratio stretch window
 
-  if (config.render.dxgi.temporary_dwm_hdr)
-  {
-    for ( auto pHDROutput : SK_GetCurrentRenderBackend ().hdr_enabled_displays )
-    {
-      extern void SK_Display_DisableHDR (SK_RenderBackend_V2::output_s *pOutput);
-                  SK_Display_DisableHDR (pHDROutput);
-    }
-  }
+  auto &rb =
+    SK_GetCurrentRenderBackend ();
 
-  if (config.display.resolution.applied)
+  rb.resetTemporaryDisplayChanges ();
+
+  if (sk::NVAPI::nv_hardware)
   {
-    SK_ChangeDisplaySettingsEx (
-      nullptr, nullptr,
-        0, CDS_RESET, nullptr  );
+    dll_log->LogEx  (true, L"[  Reflex  ] Shutting down PCL Stats...                   ");
+
+    DWORD dwTime =
+       SK_timeGetTime ();
+
+    PCLSTATS_SHUTDOWN ();
+
+    dll_log->LogEx  (false, L"done! (%4u ms)\n",            SK_timeGetTime () - dwTime);
   }
 
   dll_log->LogEx    (true, L"[ ETWTrace ] Shutting down ETW Trace Providers...         ");
@@ -2730,153 +2759,6 @@ SK_ShutdownCore (const wchar_t* backend)
   return true;
 }
 
-
-using CreateFileW_pfn =
-  HANDLE (WINAPI *)(LPCWSTR,DWORD,DWORD,LPSECURITY_ATTRIBUTES,
-                      DWORD,DWORD,HANDLE);
-using CreateFileA_pfn =
-  HANDLE (WINAPI *)(LPCSTR,DWORD,DWORD,LPSECURITY_ATTRIBUTES,
-                      DWORD,DWORD,HANDLE);
-
-static
-CreateFileW_pfn
-CreateFileW_Original = nullptr;
-
-static
-CreateFileA_pfn
-CreateFileA_Original = nullptr;
-
-static
-HANDLE
-WINAPI
-CreateFileW_Detour ( LPCWSTR               lpFileName,
-                     DWORD                 dwDesiredAccess,
-                     DWORD                 dwShareMode,
-                     LPSECURITY_ATTRIBUTES lpSecurityAttributes,
-                     DWORD                 dwCreationDisposition,
-                     DWORD                 dwFlagsAndAttributes,
-                     HANDLE                hTemplateFile )
-{
-  if (StrStrIW (lpFileName, LR"(WindowsNoEditor)"))
-  {
-    static
-      concurrency::concurrent_unordered_map <std::wstring, HANDLE>
-        pinned_files;
-
-    if (StrStrIW (lpFileName, LR"(.pak)"))
-    {
-      if (pinned_files.count (lpFileName) != 0)
-      {
-        SK_RunOnce (
-          SK_LOG0 ( ( L"!! Using already opened copy of %ws", lpFileName ), L"SK CORE" )
-        );
-
-        return
-          pinned_files [lpFileName];
-      }
-
-      HANDLE hRet =
-        CreateFileW_Original (
-          lpFileName, dwDesiredAccess, dwShareMode,
-            lpSecurityAttributes, dwCreationDisposition,
-              dwFlagsAndAttributes, hTemplateFile );
-
-
-      if (hRet != INVALID_HANDLE_VALUE)
-      {
-        // Try as you might, you're not closing this file, you're going to get
-        //   this handle back the next time you try to open and close a file for
-        //     tiny 50 byte reads.
-        //
-        //  ** For Future Reference, OPENING files on Windows takes longer than
-        //       reading them does when data is this small.
-        // 
-        //                  ( STOP IT!!!~ )
-        //
-        if (SetHandleInformation (hRet, HANDLE_FLAG_PROTECT_FROM_CLOSE,
-                                        HANDLE_FLAG_PROTECT_FROM_CLOSE))
-        {
-          pinned_files [lpFileName] = hRet;
-        }
-      }
-
-      return hRet;
-    }
-  }
-
-  return
-    CreateFileW_Original (
-      lpFileName, dwDesiredAccess, dwShareMode,
-        lpSecurityAttributes, dwCreationDisposition,
-          dwFlagsAndAttributes, hTemplateFile );
-}
-
-static
-HANDLE
-WINAPI
-CreateFileA_Detour ( LPCSTR                lpFileName,
-                     DWORD                 dwDesiredAccess,
-                     DWORD                 dwShareMode,
-                     LPSECURITY_ATTRIBUTES lpSecurityAttributes,
-                     DWORD                 dwCreationDisposition,
-                     DWORD                 dwFlagsAndAttributes,
-                     HANDLE                hTemplateFile )
-{
-  if (StrStrIA (lpFileName, R"(WindowsNoEditor)"))
-  {
-    static
-      concurrency::concurrent_unordered_map <std::string, HANDLE>
-        pinned_files;
-
-    if (StrStrIA (lpFileName, R"(.pak)"))
-    {
-      if (pinned_files.count (lpFileName) != 0)
-      {
-        SK_RunOnce (
-          SK_LOG0 ( ( L"!! Using already opened copy of %hs", lpFileName ), L"SK CORE" )
-        );
-
-        return
-          pinned_files [lpFileName];
-      }
-
-      HANDLE hRet =
-        CreateFileA_Original (
-          lpFileName, dwDesiredAccess, dwShareMode,
-            lpSecurityAttributes, dwCreationDisposition,
-              dwFlagsAndAttributes, hTemplateFile );
-
-
-      if (hRet != INVALID_HANDLE_VALUE)
-      {
-        // Try as you might, you're not closing this file, you're going to get
-        //   this handle back the next time you try to open and close a file for
-        //     tiny 50 byte reads.
-        //
-        //  ** For Future Reference, OPENING files on Windows takes longer than
-        //       reading them does when data is this small.
-        // 
-        //                  ( STOP IT!!!~ )
-        //
-        if (SetHandleInformation (hRet, HANDLE_FLAG_PROTECT_FROM_CLOSE,
-                                        HANDLE_FLAG_PROTECT_FROM_CLOSE))
-        {
-          pinned_files [lpFileName] = hRet;
-        }
-      }
-
-      return hRet;
-    }
-  }
-
-  return
-    CreateFileA_Original (
-      lpFileName, dwDesiredAccess, dwShareMode,
-        lpSecurityAttributes, dwCreationDisposition,
-          dwFlagsAndAttributes, hTemplateFile );
-}
-
-
 void
 SK_FrameCallback ( SK_RenderBackend& rb,
                    ULONG64           frames_drawn =
@@ -2889,8 +2771,7 @@ SK_FrameCallback ( SK_RenderBackend& rb,
     case 0:
     {
       // Notify anything that was waiting for injection into this game
-      if (SK_IsInjected ())
-        SK_Inject_BroadcastInjectionNotify ();
+      SK_Inject_BroadcastInjectionNotify ();
 
       wchar_t *wszDescription = nullptr;
 
@@ -2961,25 +2842,59 @@ SK_FrameCallback ( SK_RenderBackend& rb,
     //
     default:
     {
-      if (game_window.WndProc_Original != nullptr)
-      {
-        // If user wants position / style overrides, kick them off on the first
-        //   frame after a window procedure has been established.
-        //
-        //  (nb: Must be implemented asynchronously)
-        //
-        SK_RunOnce (
-        {
-          SK_Window_RepositionIfNeeded ();
+      auto priority =
+        SK_Thread_GetCurrentPriority ();
 
-          game_window.active |=
-            (SK_GetForegroundWindow () == game_window.hWnd);
-        })
+      static int _last_priority = config.priority.minimum_render_prio;
+
+      // Adjust render thread priority if user wants it
+      if (       priority <  config.priority.minimum_render_prio ||
+           _last_priority != config.priority.minimum_render_prio )
+      {
+        SK_Thread_SetCurrentPriority (config.priority.minimum_render_prio);
+
+        _last_priority = priority;
       }
+
+      // This is going to fail on Steam Deck, so do it once and that's it.
+      //
+      SK_RunOnce (SK_WASAPI_Init ());
 
       // Delayed Init  (Elden Ring vs. Flawless Widescreen compat hack)
       if (frames_drawn > 15)
       {
+        if (game_window.WndProc_Original != nullptr)
+        {
+          if (game_window.hWnd != 0)
+          {
+            if (config.window.activate_at_start || config.window.background_render)
+            {
+              // Activate the game window one time
+              //   (workaround wonkiness from splash screens, etc.)
+              SK_RunOnce (
+              {
+                game_window.CallProc (game_window.hWnd, WM_ACTIVATEAPP, TRUE,                      0);
+                game_window.CallProc (game_window.hWnd, WM_ACTIVATE,    MAKEWPARAM (WA_ACTIVE, 0), 0);
+                game_window.CallProc (game_window.hWnd, WM_SETFOCUS,    0,                         0);
+                SetForegroundWindow ( game_window.hWnd );
+              });
+            }
+
+            // If user wants position / style overrides, kick them off on the first
+            //   frame after a window procedure has been established.
+            //
+            //  (nb: Must be implemented asynchronously)
+            //
+            SK_RunOnce (
+            {
+              SK_Window_RepositionIfNeeded ();
+
+              game_window.active |=
+                (SK_GetForegroundWindow () == game_window.hWnd);
+            })
+          }
+        }
+
         SK_RunOnce (SK_Input_HookScePad ());
 
         static const auto game_id =
@@ -2991,82 +2906,6 @@ SK_FrameCallback ( SK_RenderBackend& rb,
           case SK_GAME_ID::EldenRing:
             SK_RunOnce (SK_ER_InitPlugin ());
             break;
-
-          case SK_GAME_ID::TheQuarry:
-          {
-            SK_RunOnce (
-            { SK_CreateDLLHook2 (      L"kernel32",
-                                        "CreateFileW",
-                                         CreateFileW_Detour,
-                static_cast_p2p <void> (&CreateFileW_Original) );
-
-              SK_CreateDLLHook2 (      L"kernel32",
-                                        "CreateFileA",
-                                         CreateFileA_Detour,
-                static_cast_p2p <void> (&CreateFileA_Original) );
-
-              SK_ApplyQueuedHooks ();
-            });
-
-            static std::unordered_set <DWORD> tids_checked2;
-            static std::unordered_set <DWORD> tids_checked;
-
-            static ULONG64 last_scanned = 120;
-            static std::bitset <4> finished;
-
-            if ((frames_drawn > 90 && (! finished.all ()))
-              || frames_drawn > (last_scanned + 15) )
-            {
-              extern SK_LazyGlobal <std::map <DWORD, SKWG_Thread_Entry*>>
-                                SKWG_Threads;
-              for ( auto& it : *SKWG_Threads )
-              {
-                if (it.second         == nullptr ||
-                    it.second->exited == true)
-                {
-                  continue;
-                }
-
-                if (    tids_checked2.count    (it.second->dwTid) > 0) continue;
-                else if (tids_checked.count    (it.second->dwTid) > 0)
-                         tids_checked2.emplace (it.second->dwTid);
-
-                CHandle hThread (
-                  OpenThread ( THREAD_SET_INFORMATION |
-                               THREAD_QUERY_INFORMATION, FALSE, it.second->dwTid )
-                                );
-
-                if ( (intptr_t)hThread.m_h > 0 )
-                {
-                  auto& name =
-                    it.second->name;
-
-                  if (StrStrIW (name.c_str (), L"AudioMixerRenderThread(") == nullptr &&
-                      StrStrIW (name.c_str (), L"AudioThread")             == nullptr &&
-                      StrStrIW (name.c_str (), L"libScePad")               == nullptr &&
-                      StrStrIW (name.c_str (), L"RenderThread")            == nullptr)
-                  {
-                    tids_checked.emplace (it.second->dwTid);
-                    continue;
-                  }
-
-                  if (StrStrIW (name.c_str (), L"AudioMixerRenderThread(") != nullptr &&
-                      GetThreadPriority (hThread) != THREAD_PRIORITY_TIME_CRITICAL)
-                    { SetThreadPriority (hThread,    THREAD_PRIORITY_TIME_CRITICAL); finished.set (0, true);/*tids_checked.emplace (it.second->dwTid);*/ }
-             else if (StrStrIW (name.c_str (), L"AudioThread") != nullptr)
-                    { SetThreadPriority (hThread, THREAD_PRIORITY_HIGHEST);          finished.set (1, true); tids_checked.emplace (it.second->dwTid); }
-             else if (StrStrIW (name.c_str (), L"libScePad")    != nullptr &&
-                      GetThreadPriority (hThread) != THREAD_PRIORITY_ABOVE_NORMAL)
-                    { SetThreadPriority (hThread,    THREAD_PRIORITY_ABOVE_NORMAL);  finished.set (2, true); tids_checked.emplace (it.second->dwTid); }
-             else if (StrStrIW (name.c_str (), L"RenderThread") != nullptr &&
-                      GetThreadPriority (hThread) != THREAD_PRIORITY_HIGHEST)
-                    { SetThreadPriority (hThread,    THREAD_PRIORITY_HIGHEST);       finished.set (3, true); tids_checked.emplace (it.second->dwTid); }
-                }
-              }
-
-              last_scanned = frames_drawn;
-            }
-          } break;
 #else
           case SK_GAME_ID::ChronoCross:
           {
@@ -3100,6 +2939,15 @@ SK_FrameCallback ( SK_RenderBackend& rb,
           } break;
 #endif
         }
+
+        if (rb.api != SK_RenderAPI::D3D11  &&
+            rb.api != SK_RenderAPI::D3D9Ex &&
+            rb.api != SK_RenderAPI::D3D9)
+        {
+          rb.gsync_state.update ();
+        }
+
+        SK_RunOnce (rb.gsync_state.update (true));
       }
     } break;
   }
@@ -3246,9 +3094,11 @@ SK_BeginBufferSwapEx (BOOL bWaitOnFail)
   rb.present_staging.submit.time =
     SK_QueryPerf ();
 
-  if (config.render.framerate.enforcement_policy == 4)
+  if ( config.render.framerate.enforcement_policy == 4 ||
+       config.render.framerate.enforcement_policy <  0 )
   {
-    SK::Framerate::Tick ( bWaitOnFail, 0.0, { 0,0 }, rb.swapchain.p );
+    if (rb.swapchain.p != nullptr)
+      SK::Framerate::Tick ( bWaitOnFail, 0.0, { 0,0 }, rb.swapchain.p );
   }
 }
 
@@ -3722,15 +3572,20 @@ SK_EndBufferSwap (HRESULT hr, IUnknown* device, SK_TLS* pTLS)
   extern LONGLONG __SK_LatentSyncPostDelay;
   if (            __SK_LatentSyncPostDelay > 1LL)
   {
-    SK_AutoHandle hTimer (
-      INVALID_HANDLE_VALUE
-    );
+    // Only apply this if Latent Sync is enabled
+    if ( config.render.framerate.present_interval == 0 &&
+         config.render.framerate.target_fps        > 0.0f )
+    {
+      SK_AutoHandle hTimer (
+        INVALID_HANDLE_VALUE
+      );
 
-    extern void
-    SK_Framerate_WaitUntilQPC (LONGLONG llQPC, HANDLE& hTimer);
-    SK_Framerate_WaitUntilQPC (
-      qpcTimeOfSwap.QuadPart + __SK_LatentSyncPostDelay,
-                  hTimer.m_h  );
+      extern void
+      SK_Framerate_WaitUntilQPC (LONGLONG llQPC, HANDLE& hTimer);
+      SK_Framerate_WaitUntilQPC (
+        qpcTimeOfSwap.QuadPart + __SK_LatentSyncPostDelay,
+                    hTimer.m_h  );
+    }
   }
 
 
@@ -3788,6 +3643,81 @@ SK_EndBufferSwap (HRESULT hr, IUnknown* device, SK_TLS* pTLS)
     SK_Window_RepositionIfNeeded ();
   }
 #endif
+
+
+  // Catch sneaky games that change their TopMost status unrelated to window
+  //   activation state...
+  if ( config.window.always_on_top == 0 &&
+                   SK_Window_IsTopMost (game_window.hWnd) )
+  {
+    SK_LOG0 ( ( L"Game Window was TopMost, removing..." ), L"Window Mgr" );
+
+    SK_DeferCommand ("Window.TopMost 0");
+  }
+
+
+  if (SK_DXGI_IsTrackingBudget ())
+  {
+    constexpr auto    _BudgetPollingIntervalMs = 250UL;
+    static DWORD dwLastBudgetPoll              = 0UL;
+
+    if ( SK::ControlPanel::current_time - dwLastBudgetPoll >
+                                               _BudgetPollingIntervalMs )
+    {
+      // If not using the GPU monitoring services, initialize it manually
+      extern void SK_GPU_InitSensorData (void);
+      SK_RunOnce (SK_GPU_InitSensorData ());
+
+      dwLastBudgetPoll = SK::ControlPanel::current_time;
+
+      SK_DXGI_SignalBudgetThread ();
+    }
+
+    if ( SK_GPU_GetVRAMUsed   (0) > 0 &&
+         SK_GPU_GetVRAMBudget (0) > 0 &&
+         config.render.dxgi.warn_if_vram_exceeds > 0.0f )
+    {
+      double percent_used = 100.0 *
+        ( static_cast <double> (SK_GPU_GetVRAMUsed   (0)) /
+          static_cast <double> (SK_GPU_GetVRAMBudget (0)) );
+
+      if (percent_used > config.render.dxgi.warn_if_vram_exceeds)
+      {
+        if (! std::exchange (config.render.dxgi.warned_low_vram, true))
+        {
+          std::wstring used     =
+            SK_File_SizeToStringF (SK_GPU_GetVRAMUsed   (0), 0, 2).data (),
+                       capacity =
+            SK_File_SizeToStringF (SK_GPU_GetVRAMBudget (0), 0, 2).data (),
+                       quota    =
+            SK_File_SizeToStringF (
+                (uint64_t)(0.01 * config.render.dxgi.warn_if_vram_exceeds
+                                * SK_GPU_GetVRAMBudget (0)), 0, 2).data (),
+                       overage  =
+            SK_File_SizeToStringF (SK_GPU_GetVRAMUsed   (0) -
+                (uint64_t)(0.01 * config.render.dxgi.warn_if_vram_exceeds
+                                * SK_GPU_GetVRAMBudget (0)), 0, 2).data ();
+
+          double percent_over   =
+                 percent_used - config.render.dxgi.warn_if_vram_exceeds;
+
+          SK_ImGui_WarningWithTitle (
+            SK_FormatStringW ( L"VRAM Used:\t%ls\r\n\t"
+                               L"VRAM Quota:\t%0.1f%% of Available; %ls"
+                               L"\r\n\r\n\t\t %ls "
+                               L"Over Budget by %0.1f%%  (%ls)\r\n\r\n "
+                               L" Configure VRAM Quotas by Right-Clicking the"
+                               L" VRAM Gauge.",
+                                     used.c_str (),
+                                 config.render.dxgi.warn_if_vram_exceeds,
+                                    quota.c_str (), L"*", percent_over,
+                                  overage.c_str ()
+                             ).c_str (), L"Insufficient VRAM"
+                           );
+        }
+      }
+    }
+  }
 
 
   return hr;
@@ -4057,8 +3987,12 @@ SK_API_IsDXGIBased (SK_RenderAPI api)
     case SK_RenderAPI::D3D11:
     case SK_RenderAPI::D3D12:
     case SK_RenderAPI::D3D8On11:
+    case SK_RenderAPI::D3D8On12:
     case SK_RenderAPI::DDrawOn11:
+    case SK_RenderAPI::DDrawOn12:
     case SK_RenderAPI::GlideOn11:
+    case SK_RenderAPI::GlideOn12:
+    case SK_RenderAPI::GLOn11:
       return true;
     default:
       return false;
@@ -4074,6 +4008,7 @@ SK_API_IsLayeredOnD3D11 (SK_RenderAPI api)
     case SK_RenderAPI::D3D8On11:
     case SK_RenderAPI::DDrawOn11:
     case SK_RenderAPI::GlideOn11:
+    case SK_RenderAPI::GLOn11:
       return true;
     default:
       return
@@ -4115,9 +4050,13 @@ SK_API_IsPlugInBased (SK_RenderAPI api)
   {
     case SK_RenderAPI::DDraw:
     case SK_RenderAPI::DDrawOn11:
+    case SK_RenderAPI::DDrawOn12:
     case SK_RenderAPI::D3D8:
+    case SK_RenderAPI::D3D8On11:
+    case SK_RenderAPI::D3D8On12:
     case SK_RenderAPI::Glide:
     case SK_RenderAPI::GlideOn11:
+    case SK_RenderAPI::GlideOn12:
       return true;
     default:
       return false;

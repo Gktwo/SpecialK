@@ -191,7 +191,7 @@ std::wstring   SK_EvalEnvironmentVars       (const wchar_t* wszEvaluateMe);
 bool           SK_GetUserProfileDir         (wchar_t*       buf, uint32_t* pdwLen);
 bool           SK_IsTrue                    (const wchar_t* string);
 bool           SK_IsAdmin                   (void);
-void           SK_ElevateToAdmin            (void); // Needs DOS 8.3 filename support
+void           SK_ElevateToAdmin            (const wchar_t* wszCmd     = nullptr);
 void           SK_RestartGame               (const wchar_t* wszDLL     = nullptr,
                                              const wchar_t* wszFailMsg = nullptr);
 int            SK_MessageBox                (std::wstring caption,
@@ -268,7 +268,7 @@ std::wstring   SK_GetModuleFullName         (HMODULE hDll);
 std::wstring   SK_GetModuleNameFromAddr     (LPCVOID addr);
 std::wstring   SK_GetModuleFullNameFromAddr (LPCVOID addr);
 std::wstring   SK_MakePrettyAddress         (LPCVOID addr, DWORD dwFlags = 0x0);
-bool           SK_ValidatePointer           (LPCVOID addr, bool silent = false);
+bool           SK_ValidatePointer           (LPCVOID addr, bool silent = false, MEMORY_BASIC_INFORMATION *pmi = nullptr);
 bool           SK_IsAddressExecutable       (LPCVOID addr, bool silent = false);
 void           SK_LogSymbolName             (LPCVOID addr);
 
@@ -284,6 +284,8 @@ FARPROC WINAPI SK_GetProcAddress            (const wchar_t* wszModule, const cha
 
 std::wstring
      __stdcall SK_GetDLLVersionStr          (const wchar_t* wszName);
+std::wstring
+     __stdcall SK_GetDLLProductName         (const wchar_t* wszDLL);
 bool __stdcall SK_Assert_SameDLLVersion     (const wchar_t* wszTestFile0,
                                              const wchar_t* wszTestFile1);
 

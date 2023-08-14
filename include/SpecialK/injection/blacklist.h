@@ -95,10 +95,23 @@ static constexpr constexpr_module_s::list_type __graylist = {
   L"googlecrashhandler.exe",
   L"crashsender1400.exe",
   L"crashsender1402.exe",
+
+  L"diagnostics32.exe",
+  L"edgewallpaper32.exe",
   L"wallpaper32.exe",
+  L"wallpaperservice32.exe",
+  L"webwallpaper32.exe",
+  L"winrtutil32.exe",
+  L"applicationwallpaperinject32.exe",
+  L"apputil32.exe",
+  L"ui32.exe",               // Wallpaper Engine's stpid UI app
 #else
   L"googlecrashhandler64.exe",
   L"wallpaper64.exe",
+  L"winrtutil64.exe",
+  L"diagnostics64.exe",
+  L"applicationwallpaperinject64.exe",
+
 #endif
 
   L"xvasynth.exe",
@@ -176,6 +189,7 @@ static constexpr constexpr_module_s::list_type __blacklist = {
   L"launcherpatcher.exe",      // GTA IV (32-bit)
   L"rockstarservice.exe",      //  ...
   L"rockstarsteamhelper.exe",  //  ...
+  L"gta4Browser.exe",          //  (no idea what this is, but ignore it)
   L"rockstarerrorhandler.exe", // 64-bit even in 32-bit games
 
   L"easteamproxy.exe", // Stupid EA bullcrap
@@ -188,6 +202,13 @@ static constexpr constexpr_module_s::list_type __blacklist = {
 
   L"zfgamebrowser.exe", // Genshin Impact Launcher
   L"dsx.exe",           // Dual Sense X
+
+  L"beamng.drive.exe",  // BeamNG's 32-bit launcher
+
+  L"setup_redlauncher.exe", // The Witcher 3's Launcher
+
+  L"cefsharp.browsersubprocess.exe", // Baldur's Gate 3
+  L"larilauncher.exe",
 
   L"coherentui_host.exe",
   L"activationui.exe",
@@ -247,5 +268,6 @@ static constexpr constexpr_module_s::list_type __blacklist = {
   L"itype.exe",
   L"devenv.exe",
   L"msedge.exe",
-  L"vsgraphics.exe"
+  L"vsgraphics.exe",
+  L"msedgewebview2.exe"
 };

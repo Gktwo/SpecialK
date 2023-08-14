@@ -15,15 +15,9 @@ jobs:
     steps:
     - uses: actions/checkout@v3
 
-    - uses: Trass3r/setup-cpp@master
+    - uses: SpecialKO/GA-setup-cpp@master
 
     - uses: microsoft/setup-msbuild@v1.1
-
-    - uses: hendrikmuhs/ccache-action@main
-      with:
-        key: ${{ matrix.config }}-${{ matrix.platform }}
-        max-size: 1G
-        verbose: 1
 
     - name: Build the Special K source code
       run: |
@@ -42,3 +36,10 @@ jobs:
         path: |
           ~\Documents\My Mods\SpecialK\*.dll
         if-no-files-found: error
+
+    - uses: actions/upload-artifact@v3
+      with:
+        name: SpecialK_${{ env.SK_VERSION }}_${{ env.SHORT_SHA }}_debug_symbols
+        path: |
+          ~\Documents\My Mods\SpecialK\*.pdb
+        if-no-files-found: warn

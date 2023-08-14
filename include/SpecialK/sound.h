@@ -40,13 +40,16 @@ using SK_IAudioSessionEnumerator = SK_ComPtr <IAudioSessionEnumerator>;
 using SK_IAudioSessionControl    = SK_ComPtr <IAudioSessionControl>;
 using SK_IAudioSessionControl2   = SK_ComPtr <IAudioSessionControl2>;
 using SK_IAudioSessionManager2   = SK_ComPtr <IAudioSessionManager2>;
+using SK_IAudioClient3           = SK_ComPtr <IAudioClient3>;
 
+bool                      __stdcall SK_WASAPI_Init                    (void);
 void                      __stdcall SK_SetGameMute                    (bool bMute);
 BOOL                      __stdcall SK_IsGameMuted                    (void);
 SK_IAudioMeterInformation __stdcall SK_WASAPI_GetAudioMeterInfo       (void);
 SK_ISimpleAudioVolume     __stdcall SK_WASAPI_GetVolumeControl        (DWORD   proc_id = GetCurrentProcessId ());
 SK_IChannelAudioVolume    __stdcall SK_WASAPI_GetChannelVolumeControl (DWORD   proc_id = GetCurrentProcessId ());
 void                      __stdcall SK_WASAPI_GetAudioSessionProcs    (size_t* count, DWORD* procs = nullptr);
+SK_IAudioClient3          __stdcall SK_WASAPI_GetAudioClient          (void);
 
 const char*               __stdcall SK_WASAPI_GetChannelName          (int channel_idx);
 
@@ -319,6 +322,8 @@ public:
   virtual
   ~SK_WASAPI_SessionManager (void) noexcept (false)
   {
+    Deactivate ();
+
     if (session_mgr_ != nullptr)
       session_mgr_->UnregisterSessionNotification (this);
   }
@@ -329,6 +334,7 @@ public:
     endpoint_vol_ = nullptr;
     auto_gain_    = nullptr;
     loudness_     = nullptr;
+    audio_client_ = nullptr;
   }
 
   void Activate (void)
@@ -437,6 +443,7 @@ public:
     endpoint_vol_.Attach (SK_MMDev_GetEndpointVolumeControl ().Detach ());
     auto_gain_.   Attach (SK_MMDev_GetAutoGainControl       ().Detach ());
     loudness_.    Attach (SK_MMDev_GetLoudness              ().Detach ());
+    audio_client_.Attach (SK_WASAPI_GetAudioClient          ().Detach ());
   }
 
   // IUnknown
@@ -641,8 +648,20 @@ private:
     SK_IAudioEndpointVolume            endpoint_vol_;
     SK_IAudioLoudness                  loudness_;
     SK_IAudioAutoGainControl           auto_gain_;
+    SK_IAudioClient3                   audio_client_;
 };
 
+struct SK_WASAPI_AudioLatency
+{
+  float    milliseconds;
+  uint32_t frames;
+  uint32_t samples_per_sec;
+};
 
+SK_WASAPI_AudioLatency __stdcall SK_WASAPI_GetCurrentLatency (void);
+SK_WASAPI_AudioLatency __stdcall SK_WASAPI_GetDefaultLatency (void);
+SK_WASAPI_AudioLatency __stdcall SK_WASAPI_GetMinimumLatency (void);
+SK_WASAPI_AudioLatency __stdcall SK_WASAPI_GetMaximumLatency (void);
+SK_WASAPI_AudioLatency __stdcall SK_WASAPI_SetLatency        (SK_WASAPI_AudioLatency latency);
 
 #endif /* __SK__SOUND_H__ */

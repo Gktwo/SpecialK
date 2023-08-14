@@ -246,8 +246,7 @@ public:
     InterlockedExchange (
       &refs_, pReal->AddRef  () - 1
     );        pReal->Release ();
-    AddRef ();
-
+    
     ver_ = 0;
 
     IUnknown *pPromotion = nullptr;
@@ -259,6 +258,11 @@ public:
     {
       SK_LOG0 ( ( L"Promoted ID3D11DeviceContext to ID3D11DeviceContext%li", ver_),
                   __SK_SUBSYSTEM__ );
+    }
+
+    else
+    {
+      AddRef ();
     }
 
     dev_ctx_handle_ =
@@ -278,7 +282,6 @@ public:
     InterlockedExchange (
       &refs_, pReal->AddRef  () - 1
     );        pReal->Release ();
-    AddRef ();
 
     ver_ = 1;
 
@@ -290,6 +293,11 @@ public:
     {
       SK_LOG0 ( ( L"Promoted ID3D11DeviceContext1 to ID3D11DeviceContext%li", ver_),
                   __SK_SUBSYSTEM__ );
+    }
+
+    else
+    {
+      AddRef ();
     }
 
     dev_ctx_handle_ =
@@ -310,7 +318,6 @@ public:
       &refs_, pReal->AddRef  () - 1
     );        pReal->Release ();
     AddRef ();
-
 
     ver_ = 2;
 
@@ -340,7 +347,6 @@ public:
     InterlockedExchange (
       &refs_, pReal->AddRef  () - 1
     );        pReal->Release ();
-    AddRef ();
 
     ver_ = 3;
 
@@ -350,6 +356,11 @@ public:
     {
       SK_LOG0 ( ( L"Promoted ID3D11DeviceContext3 to ID3D11DeviceContext%li", ver_),
                   __SK_SUBSYSTEM__ );
+    }
+
+    else
+    {
+      AddRef ();
     }
 
     dev_ctx_handle_ =
@@ -417,7 +428,8 @@ public:
       riid == __uuidof (ID3D11DeviceContext1) ||
       riid == __uuidof (ID3D11DeviceContext2) ||
       riid == __uuidof (ID3D11DeviceContext3) ||
-      riid == __uuidof (ID3D11DeviceContext4))
+      riid == __uuidof (ID3D11DeviceContext4) ||
+      riid == SKID_D3D11WrappedImmediateContext )
     {
       auto _GetVersion = [](REFIID riid) ->
         UINT
@@ -434,7 +446,7 @@ public:
       UINT required_ver =
         _GetVersion (riid);
 
-      if (ver_ < required_ver)
+      if (riid != SKID_D3D11WrappedImmediateContext && ver_ < required_ver)
       {
         IUnknown *pPromoted = nullptr;
 
@@ -632,7 +644,7 @@ public:
     TraceAPI
 
 #ifndef SK_D3D11_LAZY_WRAP
-    if (! SK_D3D11_IgnoreWrappedOrDeferred (true, pReal))
+    if (! SK_D3D11_IgnoreWrappedOrDeferred (true, deferred_, pReal))
           SK_D3D11_SetShaderResources_Impl (
            SK_D3D11_ShaderType::Pixel,
                        deferred_ ?
@@ -659,7 +671,7 @@ public:
     else if (ppClassInstances == nullptr)   NumClassInstances = 0;
 
 #ifndef SK_D3D11_LAZY_WRAP
-    if (! SK_D3D11_IgnoreWrappedOrDeferred (true, pReal))
+    if (! SK_D3D11_IgnoreWrappedOrDeferred (true, deferred_, pReal))
           SK_D3D11_SetShader_Impl     (pReal,
                 pPixelShader, sk_shader_class::Pixel,
                                       ppClassInstances,
@@ -693,7 +705,7 @@ public:
     else if (ppClassInstances == nullptr)   NumClassInstances = 0;
 
 #ifndef SK_D3D11_LAZY_WRAP
-    if (! SK_D3D11_IgnoreWrappedOrDeferred (true, pReal))
+    if (! SK_D3D11_IgnoreWrappedOrDeferred (true, deferred_, pReal))
           SK_D3D11_SetShader_Impl   (pReal,
                pVertexShader, sk_shader_class::Vertex,
                                       ppClassInstances,
@@ -712,7 +724,7 @@ public:
     TraceAPI
 
 #ifndef SK_D3D11_LAZY_WRAP
-    if (! SK_D3D11_IgnoreWrappedOrDeferred (true, pReal))
+    if (! SK_D3D11_IgnoreWrappedOrDeferred (true, deferred_, pReal))
           SK_D3D11_DrawIndexed_Impl (pReal,
                                          IndexCount,
                                     StartIndexLocation,
@@ -734,7 +746,7 @@ public:
     TraceAPI
 
 #ifndef SK_D3D11_LAZY_WRAP
-    if (! SK_D3D11_IgnoreWrappedOrDeferred (true, pReal))
+    if (! SK_D3D11_IgnoreWrappedOrDeferred (true, deferred_, pReal))
           SK_D3D11_Draw_Impl (       pReal,
                                  VertexCount,
                             StartVertexLocation, true,
@@ -756,7 +768,7 @@ public:
     TraceAPI
 
 #ifndef SK_D3D11_LAZY_WRAP
-    if (! SK_D3D11_IgnoreWrappedOrDeferred (true, pReal))
+    if (! SK_D3D11_IgnoreWrappedOrDeferred (true, deferred_, pReal))
       return
         SK_D3D11_Map_Impl         (pReal,
             pResource,
@@ -783,7 +795,7 @@ public:
     TraceAPI
 
 #ifndef SK_D3D11_LAZY_WRAP
-    if (! SK_D3D11_IgnoreWrappedOrDeferred (true, pReal))
+    if (! SK_D3D11_IgnoreWrappedOrDeferred (true, deferred_, pReal))
           SK_D3D11_Unmap_Impl       (pReal,
               pResource,
             Subresource, TRUE       );
@@ -852,7 +864,7 @@ public:
     TraceAPI
 
 #ifndef SK_D3D11_LAZY_WRAP
-    if (! SK_D3D11_IgnoreWrappedOrDeferred (true, pReal))
+    if (! SK_D3D11_IgnoreWrappedOrDeferred (true, deferred_, pReal))
       SK_D3D11_DrawIndexedInstanced_Impl ( pReal,
                                            IndexCountPerInstance, InstanceCount,
                                            StartIndexLocation,  BaseVertexLocation,
@@ -871,7 +883,7 @@ public:
     TraceAPI
 
 #ifndef SK_D3D11_LAZY_WRAP
-    if (! SK_D3D11_IgnoreWrappedOrDeferred (true, pReal))
+    if (! SK_D3D11_IgnoreWrappedOrDeferred (true, deferred_, pReal))
           SK_D3D11_DrawInstanced_Impl (pReal,
                                       VertexCountPerInstance,
                                                     InstanceCount,
@@ -916,7 +928,7 @@ public:
     else if (ppClassInstances == nullptr)   NumClassInstances = 0;
 
 #ifndef SK_D3D11_LAZY_WRAP
-    if (! SK_D3D11_IgnoreWrappedOrDeferred (true, pReal))
+    if (! SK_D3D11_IgnoreWrappedOrDeferred (true, deferred_, pReal))
           SK_D3D11_SetShader_Impl   (pReal,
              pGeometryShader, sk_shader_class::Geometry,
                                       ppClassInstances,
@@ -943,7 +955,7 @@ public:
     TraceAPI
 
 #ifndef SK_D3D11_LAZY_WRAP
-    if (! SK_D3D11_IgnoreWrappedOrDeferred (true, pReal))
+    if (! SK_D3D11_IgnoreWrappedOrDeferred (true, deferred_, pReal))
           SK_D3D11_SetShaderResources_Impl (
              SK_D3D11_ShaderType::Vertex,
                           deferred_ ?
@@ -1020,7 +1032,7 @@ public:
     TraceAPI
 
 #ifndef SK_D3D11_LAZY_WRAP
-    if (! SK_D3D11_IgnoreWrappedOrDeferred (true, pReal))
+    if (! SK_D3D11_IgnoreWrappedOrDeferred (true, deferred_, pReal))
           SK_D3D11_SetShaderResources_Impl (
              SK_D3D11_ShaderType::Geometry,
                                  deferred_ ?
@@ -1055,7 +1067,7 @@ public:
     TraceAPI
 
 #ifndef SK_D3D11_LAZY_WRAP
-    if (! SK_D3D11_IgnoreWrappedOrDeferred (true, pReal))
+    if (! SK_D3D11_IgnoreWrappedOrDeferred (true, deferred_, pReal))
           SK_D3D11_OMSetRenderTargets_Impl (pReal,
                                  NumViews,
                       ppRenderTargetViews,
@@ -1078,7 +1090,7 @@ public:
     TraceAPI
 
 #ifndef SK_D3D11_LAZY_WRAP
-    if (! SK_D3D11_IgnoreWrappedOrDeferred (true, pReal))
+    if (! SK_D3D11_IgnoreWrappedOrDeferred (true, deferred_, pReal))
           SK_D3D11_OMSetRenderTargetsAndUnorderedAccessViews_Impl (pReal,
                      NumRTVs,
                       ppRenderTargetViews,
@@ -1138,7 +1150,7 @@ public:
     TraceAPI
 
 #ifndef SK_D3D11_LAZY_WRAP
-  if (! SK_D3D11_IgnoreWrappedOrDeferred (true, pReal))
+  if (! SK_D3D11_IgnoreWrappedOrDeferred (true, deferred_, pReal))
         SK_D3D11_DrawAuto_Impl    (pReal, TRUE, dev_ctx_handle_);
     else
 #endif
@@ -1152,7 +1164,7 @@ public:
     TraceAPI
 
 #ifndef SK_D3D11_LAZY_WRAP
-  if (! SK_D3D11_IgnoreWrappedOrDeferred (true, pReal))
+  if (! SK_D3D11_IgnoreWrappedOrDeferred (true, deferred_, pReal))
         SK_D3D11_DrawIndexedInstancedIndirect_Impl (pReal,
                            pBufferForArgs,
                  AlignedByteOffsetForArgs,
@@ -1173,7 +1185,7 @@ public:
     TraceAPI
 
 #ifndef SK_D3D11_LAZY_WRAP
-  if (! SK_D3D11_IgnoreWrappedOrDeferred (true, pReal))
+  if (! SK_D3D11_IgnoreWrappedOrDeferred (true, deferred_, pReal))
         SK_D3D11_DrawInstancedIndirect_Impl (pReal,
                     pBufferForArgs,
           AlignedByteOffsetForArgs, TRUE, dev_ctx_handle_
@@ -1193,7 +1205,7 @@ public:
     TraceAPI
 
 #ifndef SK_D3D11_LAZY_WRAP
-  if (! SK_D3D11_IgnoreWrappedOrDeferred (true, pReal))
+  if (! SK_D3D11_IgnoreWrappedOrDeferred (true, deferred_, pReal))
         SK_D3D11_Dispatch_Impl ( pReal,
           ThreadGroupCountX,
           ThreadGroupCountY,
@@ -1214,7 +1226,7 @@ public:
     TraceAPI
 
 #ifndef SK_D3D11_LAZY_WRAP
-  if (! SK_D3D11_IgnoreWrappedOrDeferred (true, pReal))
+  if (! SK_D3D11_IgnoreWrappedOrDeferred (true, deferred_, pReal))
         SK_D3D11_DispatchIndirect_Impl ( pReal,
                     pBufferForArgs,
           AlignedByteOffsetForArgs, TRUE,
@@ -1447,7 +1459,7 @@ public:
     TraceAPI
 
 #ifndef SK_D3D11_LAZY_WRAP
-  if (! SK_D3D11_IgnoreWrappedOrDeferred (true, pReal))
+  if (! SK_D3D11_IgnoreWrappedOrDeferred (true, deferred_, pReal))
         SK_D3D11_UpdateSubresource_Impl (pReal,
                       pDstResource,
                        DstSubresource,
@@ -1646,7 +1658,7 @@ public:
     TraceAPI
 
 #ifndef SK_D3D11_LAZY_WRAP
-  if (! SK_D3D11_IgnoreWrappedOrDeferred (true, pReal))
+  if (! SK_D3D11_IgnoreWrappedOrDeferred (true, deferred_, pReal))
         SK_D3D11_SetShaderResources_Impl (
            SK_D3D11_ShaderType::Hull,
                            deferred_ ?
@@ -1674,8 +1686,8 @@ public:
     else if (ppClassInstances == nullptr)   NumClassInstances = 0;
 
 #ifndef SK_D3D11_LAZY_WRAP
-  if (! SK_D3D11_IgnoreWrappedOrDeferred (true, pReal))
-        SK_D3D11_SetShader_Impl          (      pReal,
+  if (! SK_D3D11_IgnoreWrappedOrDeferred (true, deferred_, pReal))
+        SK_D3D11_SetShader_Impl          (                 pReal,
                pHullShader, sk_shader_class::Hull,
                                     ppClassInstances,
                                    NumClassInstances, true,
@@ -1721,7 +1733,7 @@ public:
     TraceAPI
 
 #ifndef SK_D3D11_LAZY_WRAP
-  if (! SK_D3D11_IgnoreWrappedOrDeferred (true, pReal))
+  if (! SK_D3D11_IgnoreWrappedOrDeferred (true, deferred_, pReal))
         SK_D3D11_SetShaderResources_Impl (
            SK_D3D11_ShaderType::Domain,
                              deferred_ ?
@@ -1749,7 +1761,7 @@ public:
     else if (ppClassInstances == nullptr)   NumClassInstances = 0;
 
 #ifndef SK_D3D11_LAZY_WRAP
-  if (! SK_D3D11_IgnoreWrappedOrDeferred (true, pReal))
+  if (! SK_D3D11_IgnoreWrappedOrDeferred (true, deferred_, pReal))
         SK_D3D11_SetShader_Impl   (pReal,
              pDomainShader, sk_shader_class::Domain,
                                     ppClassInstances,
@@ -1793,7 +1805,7 @@ public:
     TraceAPI
 
 #ifndef SK_D3D11_LAZY_WRAP
-  if (! SK_D3D11_IgnoreWrappedOrDeferred (true, pReal))
+  if (! SK_D3D11_IgnoreWrappedOrDeferred (true, deferred_, pReal))
         SK_D3D11_SetShaderResources_Impl (
            SK_D3D11_ShaderType::Compute,
                               deferred_,
@@ -1829,7 +1841,7 @@ public:
     TraceAPI
 
 #ifndef SK_D3D11_LAZY_WRAP
-  if (! SK_D3D11_IgnoreWrappedOrDeferred (true, pReal))
+  if (! SK_D3D11_IgnoreWrappedOrDeferred (true, deferred_, pReal))
         SK_D3D11_SetShader_Impl   (pReal,
              pComputeShader, sk_shader_class::Compute,
                                      ppClassInstances,

@@ -348,12 +348,20 @@ struct sk_window_s {
   HWND       hWnd             = nullptr;
   HWND       parent           = nullptr;
   HWND       child            = nullptr; // Render viewport
+  HWND       top              = nullptr;
   WNDPROC    WndProc_Original = nullptr;
   WNDPROC    RawProc_Original = nullptr;
 
   bool       exclusive_full   = false; //D3D only
 
   bool       active           = true;
+
+  struct {
+    bool     inside           = true;
+    bool     tracking         = false;
+    bool     can_track        = false; // Able to use TrackMouseEvent?
+    DWORD    last_move_msg    = 0UL;
+  } mouse;
 
   struct {
     int width  = 0;
@@ -630,7 +638,15 @@ SK_DispatchMessageW (_In_ const MSG *lpMsg);
 
 BOOL
 WINAPI
+SK_TranslateMessage (_In_ const MSG *lpMsg);
+
+BOOL
+WINAPI
 SK_GetMessageW (LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMin, UINT wMsgFilterMax);
+
+BOOL
+WINAPI
+SK_PeekMessageW (LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMin, UINT wMsgFilterMax, UINT wRemoveMsg);
 
 HWND
 WINAPI

@@ -386,11 +386,19 @@ XInputEnable1_4_Detour (
   if (config.window.background_render)
   {
     xinput_enabled             = TRUE;
+
+    if (pCtx->XInputEnable_Original == nullptr)
+      return;
+
     pCtx->XInputEnable_Original (TRUE);
   }
   else
   {
     xinput_enabled             = enable;
+
+    if (pCtx->XInputEnable_Original == nullptr)
+      return;
+
     pCtx->XInputEnable_Original (enable);
   }
 
@@ -406,6 +414,8 @@ XInputGetState1_4_Detour (
   _In_  DWORD         dwUserIndex,
   _Out_ XINPUT_STATE *pState )
 {
+  SK_LOG_FIRST_CALL
+
   HMODULE hModCaller = SK_GetCallingDLL ();
 
   if (config.input.gamepad.xinput.auto_slot_assign && dwUserIndex == 0)
@@ -414,7 +424,13 @@ XInputGetState1_4_Detour (
   dwUserIndex =
     config.input.gamepad.xinput.assignment [std::min (dwUserIndex, XUSER_MAX_INDEX)];
 
-  SK_LOG_FIRST_CALL
+  // TODO: Indicate a read attempt, but distinguish it from SK_XINPUT_READ below
+  if (config.input.gamepad.xinput.blackout_api)
+    return ERROR_DEVICE_NOT_CONNECTED;
+
+  if (config.input.gamepad.xinput.disable [dwUserIndex])
+    return ERROR_DEVICE_NOT_CONNECTED;
+
   SK_XINPUT_READ (dwUserIndex)
 
   if (pState      == nullptr)         return ERROR_SUCCESS;
@@ -428,6 +444,9 @@ XInputGetState1_4_Detour (
 
   SK_XInputContext::instance_s* pCtx =
     &xinput_ctx.XInput1_4;
+
+  if (pCtx->XInputGetState_Original == nullptr)
+    return ERROR_SUCCESS;
 
   DWORD dwRet =
     SK_XInput_Holding (dwUserIndex) ? ERROR_DEVICE_NOT_CONNECTED
@@ -461,6 +480,8 @@ XInputGetStateEx1_4_Detour (
   _In_  DWORD            dwUserIndex,
   _Out_ XINPUT_STATE_EX *pState )
 {
+  SK_LOG_FIRST_CALL
+
   struct cached_state_s
   {
     ULONGLONG call_count = 0ULL;
@@ -520,7 +541,7 @@ XInputGetStateEx1_4_Detour (
 
       if (++call_count > 1)
       {
-        if ((qpcTime - _timing.tCache) / (SK_QpcTicksPerMs) < 1)
+        if ((qpcTime - _timing.tCache) / (SK_PerfTicksPerMs) < 1)
           ++_timing._observed.ulSubMillisecondReqs;
         if (_timing.ulCacheFrame == SK_GetFramesDrawn ())
           ++_timing._observed.ulSubFrameReqs;
@@ -564,7 +585,13 @@ XInputGetStateEx1_4_Detour (
   dwUserIndex =
     config.input.gamepad.xinput.assignment [std::min (dwUserIndex, XUSER_MAX_INDEX)];
 
-  SK_LOG_FIRST_CALL
+  // TODO: Indicate a read attempt, but distinguish it from SK_XINPUT_READ below
+  if (config.input.gamepad.xinput.blackout_api)
+    return ERROR_DEVICE_NOT_CONNECTED;
+
+  if (config.input.gamepad.xinput.disable [dwUserIndex])
+    return ERROR_DEVICE_NOT_CONNECTED;
+
   SK_XINPUT_READ (dwUserIndex)
 
   if (pState      == nullptr)         return ERROR_SUCCESS;
@@ -578,6 +605,9 @@ XInputGetStateEx1_4_Detour (
 
   SK_XInputContext::instance_s* pCtx =
     &xinput_ctx.XInput1_4;
+
+  if (pCtx->XInputGetStateEx_Original == nullptr)
+    return ERROR_SUCCESS;
 
   DWORD dwRet =
     SK_XInput_Holding (dwUserIndex) ? ERROR_DEVICE_NOT_CONNECTED
@@ -624,6 +654,8 @@ XInputGetCapabilities1_4_Detour (
   _In_  DWORD                dwFlags,
   _Out_ XINPUT_CAPABILITIES *pCapabilities )
 {
+  SK_LOG_FIRST_CALL
+
   HMODULE hModCaller = SK_GetCallingDLL ();
 
   if (config.input.gamepad.xinput.auto_slot_assign && dwUserIndex == 0)
@@ -632,7 +664,12 @@ XInputGetCapabilities1_4_Detour (
   dwUserIndex =
     config.input.gamepad.xinput.assignment [std::min (dwUserIndex, XUSER_MAX_INDEX)];
 
-  SK_LOG_FIRST_CALL
+  if (config.input.gamepad.xinput.blackout_api)
+    return ERROR_DEVICE_NOT_CONNECTED;
+
+  if (config.input.gamepad.xinput.disable [dwUserIndex])
+    return ERROR_DEVICE_NOT_CONNECTED;
+
   SK_XINPUT_READ (dwUserIndex)
 
   if (pCapabilities == nullptr)         return (DWORD)E_POINTER;
@@ -643,6 +680,9 @@ XInputGetCapabilities1_4_Detour (
 
   SK_XInputContext::instance_s* pCtx =
     &xinput_ctx.XInput1_4;
+
+  if (pCtx->XInputGetCapabilities_Original == nullptr)
+    return ERROR_SUCCESS;
 
   DWORD dwRet =
     SK_XInput_Holding (dwUserIndex) ? ERROR_DEVICE_NOT_CONNECTED
@@ -669,6 +709,8 @@ XInputGetBatteryInformation1_4_Detour (
   _In_  BYTE                        devType,
   _Out_ XINPUT_BATTERY_INFORMATION *pBatteryInformation )
 {
+  SK_LOG_FIRST_CALL
+
   HMODULE hModCaller = SK_GetCallingDLL ();
 
   if (config.input.gamepad.xinput.auto_slot_assign && dwUserIndex == 0)
@@ -677,7 +719,12 @@ XInputGetBatteryInformation1_4_Detour (
   dwUserIndex =
     config.input.gamepad.xinput.assignment [std::min (dwUserIndex, XUSER_MAX_INDEX)];
 
-  SK_LOG_FIRST_CALL
+  if (config.input.gamepad.xinput.blackout_api)
+    return ERROR_DEVICE_NOT_CONNECTED;
+
+  if (config.input.gamepad.xinput.disable [dwUserIndex])
+    return ERROR_DEVICE_NOT_CONNECTED;
+
   SK_XINPUT_READ (dwUserIndex)
 
   if (pBatteryInformation == nullptr) return (DWORD)E_POINTER;
@@ -688,6 +735,9 @@ XInputGetBatteryInformation1_4_Detour (
 
   SK_XInputContext::instance_s* pCtx =
     &xinput_ctx.XInput1_4;
+
+  if (pCtx->XInputGetBatteryInformation_Original == nullptr)
+    return ERROR_SUCCESS;
 
   DWORD dwRet =
     SK_XInput_Holding (dwUserIndex) ? ERROR_DEVICE_NOT_CONNECTED
@@ -723,6 +773,8 @@ XInputSetState1_4_Detour (
   _In_    DWORD             dwUserIndex,
   _Inout_ XINPUT_VIBRATION *pVibration )
 {
+  SK_LOG_FIRST_CALL
+
   HMODULE hModCaller = SK_GetCallingDLL ();
 
   if (config.input.gamepad.xinput.auto_slot_assign && dwUserIndex == 0)
@@ -730,8 +782,14 @@ XInputSetState1_4_Detour (
 
   dwUserIndex =
     config.input.gamepad.xinput.assignment [std::min (dwUserIndex, XUSER_MAX_INDEX)];
+  
+  // TODO: Indicate a write attempt, but distinguish it from SK_XINPUT_READ below
+  if (config.input.gamepad.xinput.blackout_api)
+    return ERROR_DEVICE_NOT_CONNECTED;
 
-  SK_LOG_FIRST_CALL
+  if (config.input.gamepad.xinput.disable [dwUserIndex])
+    return ERROR_DEVICE_NOT_CONNECTED;
+
   SK_XINPUT_WRITE (sk_input_dev_type::Gamepad)
 
   if (xinput_ctx.preventHapticRecursion (dwUserIndex, true))
@@ -739,6 +797,9 @@ XInputSetState1_4_Detour (
 
   SK_XInputContext::instance_s* pCtx =
     &xinput_ctx.XInput1_4;
+
+  if (pCtx->XInputSetState_Original == nullptr)
+    return ERROR_SUCCESS;
 
   if (! config.input.gamepad.xinput.hook_setstate)
     return pCtx->XInputSetState_Original (dwUserIndex, pVibration);
@@ -1111,11 +1172,21 @@ XInputPowerOff1_4_Detour (
   SK_XInputContext::instance_s* pCtx =
     &xinput_ctx.XInput1_4;
 
+  if (pCtx->XInputPowerOff_Original == nullptr)
+    return ERROR_SUCCESS;
+
   if (config.input.gamepad.xinput.auto_slot_assign && dwUserIndex == 0)
     dwUserIndex = config.input.gamepad.xinput.ui_slot;
 
   dwUserIndex =
     config.input.gamepad.xinput.assignment [std::min (dwUserIndex, XUSER_MAX_INDEX)];
+
+  // TODO: Indicate a write attempt, but distinguish it from SK_XINPUT_READ below
+  if (config.input.gamepad.xinput.blackout_api)
+    return ERROR_DEVICE_NOT_CONNECTED;
+
+  if (config.input.gamepad.xinput.disable [dwUserIndex])
+    return ERROR_DEVICE_NOT_CONNECTED;
 
   SK_XINPUT_WRITE (sk_input_dev_type::Gamepad)
 
@@ -1181,6 +1252,8 @@ XInputGetKeystroke1_4_Detour (
   DWORD             dwReserved,
   PXINPUT_KEYSTROKE pKeystroke )
 {
+  SK_LOG_FIRST_CALL
+
   HMODULE hModCaller = SK_GetCallingDLL ();
 
   if (config.input.gamepad.xinput.auto_slot_assign && dwUserIndex == 0)
@@ -1189,7 +1262,13 @@ XInputGetKeystroke1_4_Detour (
   dwUserIndex =
     config.input.gamepad.xinput.assignment [std::min (dwUserIndex, XUSER_MAX_INDEX)];
 
-  SK_LOG_FIRST_CALL
+  // TODO: Indicate a read attempt, but distinguish it from SK_XINPUT_READ below
+  if (config.input.gamepad.xinput.blackout_api)
+    return ERROR_DEVICE_NOT_CONNECTED;
+
+  if (config.input.gamepad.xinput.disable [dwUserIndex])
+    return ERROR_DEVICE_NOT_CONNECTED;
+
   SK_XINPUT_READ (dwUserIndex)
 
   if (pKeystroke == nullptr)
@@ -1202,6 +1281,9 @@ XInputGetKeystroke1_4_Detour (
 
   SK_XInputContext::instance_s* pCtx =
     &xinput_ctx.XInput1_4;
+
+  if (pCtx->XInputGetKeystroke_Original == nullptr)
+    return ERROR_SUCCESS;
 
   DWORD dwRet =
     SK_XInput_Holding (dwUserIndex) ? ERROR_DEVICE_NOT_CONNECTED
@@ -2451,9 +2533,7 @@ SK_XInput_UpdateSlotForUI ( BOOL  success,
 
       if (! config.input.gamepad.disabled_to_game)
       {
-        SK_QueryPerformanceCounter (
-          (LARGE_INTEGER *)&SK_XInput_Backend->viewed.gamepad
-        );
+        SK_XInput_Backend->viewed.gamepad = SK_QueryPerf ().QuadPart;
       }
     }
   }

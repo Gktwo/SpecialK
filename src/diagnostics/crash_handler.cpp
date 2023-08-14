@@ -1051,8 +1051,7 @@ SK_TopLevelExceptionFilter ( _In_ struct _EXCEPTION_POINTERS *ExceptionInfo )
     {
       // Notify anything that was waiting for injection into this game,
       //   we didn't quite live that long :)
-      if (SK_IsInjected ())
-        SK_RunOnce (SK_Inject_BroadcastExitNotify ());
+      SK_RunOnce (SK_Inject_BroadcastExitNotify ());
 
       SK_SelfDestruct     (   );
       SK_TerminateProcess (0x0);
@@ -1454,8 +1453,7 @@ SK_TopLevelExceptionFilter ( _In_ struct _EXCEPTION_POINTERS *ExceptionInfo )
   {
     // Stop injection on crash
     if (SK_GetFramesDrawn () > 1)
-    { extern void
-      SK_Inject_BroadcastExitNotify (void);
+    { 
       SK_Inject_BroadcastExitNotify ();
     }
 
@@ -1494,7 +1492,7 @@ SK_TopLevelExceptionFilter ( _In_ struct _EXCEPTION_POINTERS *ExceptionInfo )
       localtime_s (&now_tm, &now);
 
       static const wchar_t* wszTimestamp =
-        L"%m-%d-%Y__%H'%M'%S\\";
+        L"%Y-%m-%d__%H'%M'%S\\";
 
       wcsftime (wszTime, MAX_PATH, wszTimestamp, &now_tm);
       lstrcatW (wszOutDir, wszTime);
@@ -1602,10 +1600,9 @@ SK_TopLevelExceptionFilter ( _In_ struct _EXCEPTION_POINTERS *ExceptionInfo )
       FindClose (hFind);
     }
 
-    crash_log->silent = true;
     crash_log->lines++;
 
-    //if (! (crash_log.initialized && crash_log.silent))
+    if (! config.system.silent_crash )
     {
       if (! crash_sound->play ())
       {

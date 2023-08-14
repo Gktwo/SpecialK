@@ -59,10 +59,12 @@ SK_ImGui_SelectAudioSessionDlg (void)
 
   bool changed = false;
 
-  ImGui::SetNextWindowSizeConstraints ( ImVec2 (io.DisplaySize.x * 0.25f,
-                                                io.DisplaySize.y * 0.15f),
-                                        ImVec2 (io.DisplaySize.x * 0.75f,
-                                                io.DisplaySize.y * 0.666f) );
+  static const float fMinX = 400.0f;
+  static const float fMinY = 150.0f;
+
+  ImGui::SetNextWindowSizeConstraints ( ImVec2 (fMinX, fMinY),
+                                        ImVec2 (std::max (io.DisplaySize.x * 0.75f, fMinX),
+                                                std::max (io.DisplaySize.y * 0.666f,fMinY)) );
 
   if (ImGui::BeginPopupModal ("Audio Session Selector", nullptr, ImGuiWindowFlags_AlwaysAutoResize |
                                                                  ImGuiWindowFlags_NoScrollbar      | ImGuiWindowFlags_NoScrollWithMouse))
@@ -195,6 +197,9 @@ SK_ImGui_SelectAudioSessionDlg (void)
         ImGui::CloseCurrentPopup ();
       }
     }
+
+    if (count == 0)
+      ImGui::CloseCurrentPopup ();
 
     ImGui::PopItemWidth ();
     ImGui::EndPopup     ();
@@ -394,6 +399,73 @@ SK_ImGui_VolumeManager (void)
     ImGui::PopItemWidth ();
   }
   ImGui::EndGroup   ();
+  ImGui::SameLine   ();
+  static std::set <SK_ConfigSerializedKeybind *>
+    keybinds = {
+      &config.sound.game_mute_keybind,
+      &config.sound.game_volume_up_keybind,
+      &config.sound.game_volume_down_keybind
+    };
+
+  for ( auto& binding : keybinds )
+  {
+    if (binding->assigning)
+    {
+      if (! ImGui::IsPopupOpen (binding->bind_name))
+        ImGui::OpenPopup (      binding->bind_name);
+
+      std::wstring     original_binding =
+                                binding->human_readable;
+
+      SK_ImGui_KeybindDialog (  binding           );
+
+      if (             original_binding !=
+                                binding->human_readable)
+        binding->param->store ( binding->human_readable);
+
+      if (! ImGui::IsPopupOpen (binding->bind_name))
+                                binding->assigning = false;
+    }
+  }
+
+  if (ImGui::BeginMenu ("Keybinds###VolumeKeyMenu"))
+  {
+    const auto Keybinding =
+    [] (SK_ConfigSerializedKeybind *binding) ->
+    auto
+    {
+      if (binding == nullptr)
+        return false;
+
+      std::string label =
+        SK_WideCharToUTF8      (binding->human_readable);
+
+      ImGui::PushID            (binding->bind_name);
+
+      binding->assigning =
+        SK_ImGui_KeybindSelect (binding, label.c_str ());
+
+      ImGui::PopID             ();
+
+      return true;
+    };
+
+    ImGui::BeginGroup ();
+    for ( auto& keybind : keybinds )
+    {
+      ImGui::Text ( "%s:  ",
+                      keybind->bind_name );
+    }
+    ImGui::EndGroup   ();
+    ImGui::SameLine   ();
+    ImGui::BeginGroup ();
+    for ( auto& keybind : keybinds )
+    {
+      Keybinding  (   keybind );
+    }
+    ImGui::EndGroup   ();
+    ImGui::EndMenu    ();
+  }
   ImGui::Columns    (1);
 
   ImGui::PopStyleColor (3);
@@ -535,8 +607,83 @@ SK_ImGui_VolumeManager (void)
             ImGui::TextUnformatted ("Hold Ctrl for faster +/- adjustment.");
             ImGui::EndTooltip      ();
           }
+
+          ImGui::SameLine ();
         }
       }
+
+      ImGui::VerticalSeparator ();
+      ImGui::SameLine          ();
+      ImGui::BeginGroup        ();
+
+      static auto cur_lat = SK_WASAPI_GetCurrentLatency ();
+      static auto min_lat = SK_WASAPI_GetMinimumLatency ();
+
+      static DWORD last_update0 = SK::ControlPanel::current_time;
+      static DWORD last_update1 = SK::ControlPanel::current_time + 3333UL;
+
+      if (last_update0 < SK::ControlPanel::current_time - 3333UL)
+      {   last_update0 = SK::ControlPanel::current_time;
+        cur_lat = SK_WASAPI_GetCurrentLatency ();
+      }
+
+      if (last_update1 < SK::ControlPanel::current_time - 6666UL)
+      {   last_update1 = SK::ControlPanel::current_time;
+        min_lat = SK_WASAPI_GetMinimumLatency ();
+      }
+
+      if (min_lat.frames > 0 && cur_lat.frames > 0)
+      {
+        if (min_lat.frames != cur_lat.frames)
+        {
+          ImGui::SameLine ();
+          if (ImGui::Button ("Minimize Latency"))
+          {
+            auto latency =
+              SK_WASAPI_SetLatency (min_lat);
+
+            if (latency.frames != 0 && latency.milliseconds != 0.0f)
+            {
+              SK_ImGui_WarningWithTitle (
+                SK_FormatStringW (
+                  L"Latency changed from %.1f ms to %.1f ms",
+                    cur_lat.milliseconds, latency.milliseconds).c_str (),
+                  L"Audio Latency Changed"
+              );
+
+              config.sound.minimize_latency = true;
+            }
+          }
+
+          if (ImGui::IsItemHovered ())
+          {
+            auto default_latency =
+              SK_WASAPI_GetDefaultLatency ();
+
+            ImGui::BeginTooltip ();
+            ImGui::BulletText   ("Current Latency: %.1f ms", cur_lat        .milliseconds);
+            ImGui::BulletText   ("Minimum Latency: %.1f ms", min_lat        .milliseconds);
+            ImGui::BulletText   ("Default Latency: %.1f ms", default_latency.milliseconds);
+            ImGui::Separator    ();
+            ImGui::Text         ("SK will remember to always minimize latency in this game.");
+            ImGui::EndTooltip   ();
+          }
+        }
+
+        else
+          ImGui::Text ( "Latency:\t%.1f ms @ %d kHz",
+                          cur_lat.milliseconds,
+                          cur_lat.samples_per_sec / 1000UL );
+      }
+
+      float fPosY =
+        ImGui::GetCursorPosY ();
+
+      ImGui::Separator ();
+      ImGui::EndGroup  ();
+
+      ImGui::SetCursorPosY (fPosY);
+      ImGui::Spacing ();
 
       const char* szMuteButtonTitle =
         ( master_mute ? "  Unmute  ###MasterMute" :
@@ -789,7 +936,7 @@ SK_ImGui_VolumeManager (void)
 bool
 SK::ControlPanel::Sound::Draw (void)
 {
-  if (ImGui::CollapsingHeader ("Volume Management"))
+  if (ImGui::CollapsingHeader ("Audio Management"))
   {
     SK_ImGui_VolumeManager ();
 

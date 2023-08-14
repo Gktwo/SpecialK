@@ -448,7 +448,7 @@ SK_TraceLoadLibrary (       HMODULE hCallingMod,
     }
   }
 
-  if (hCallingMod != SK_GetDLL ()/* && SK_IsInjected ()*/)
+  if (hCallingMod != SK_GetDLL ())
   {
     if ( (! (SK_GetDLLRole () & DLL_ROLE::D3D9)) && config.apis.d3d9.hook &&
          ( StrStrI  (lpFileName, SK_TEXT("d3d9.dll"))  ||
@@ -482,11 +482,11 @@ SK_TraceLoadLibrary (       HMODULE hCallingMod,
               ( StrStrI  (lpFileName, SK_TEXT("dxcore.dll")) || // Unity?! WTF are you doing?
                 StrStrIW (wszModName,        L"dxcore.dll") ))
       SK_RunOnce (SK_BootDXGI   ())
-#ifdef _M_AMD64
     else if ( (! (SK_GetDLLRole () & DLL_ROLE::DXGI)) && config.apis.dxgi.d3d12.hook &&
               ( StrStrI  (lpFileName, SK_TEXT("d3d12.dll")) ||
                 StrStrIW (wszModName,        L"d3d12.dll") ))
       SK_RunOnce (SK_BootDXGI   ())
+#ifdef _M_AMD64
     else if (   StrStrI  (lpFileName, SK_TEXT("vulkan-1.dll")) ||
                 StrStrIW (wszModName,        L"vulkan-1.dll")  )
       SK_RunOnce (SK_BootVulkan ())
@@ -516,6 +516,22 @@ SK_TraceLoadLibrary (       HMODULE hCallingMod,
     else if (   StrStrI ( lpFileName, SK_TEXT("libScePad")) ||
                 StrStrIW (wszModName,        L"libScePad") )
       SK_RunOnce (SK_Input_HookScePad ())
+    else if (   StrStrI ( lpFileName, SK_TEXT("dstorage.dll")) ||
+                StrStrIW (wszModName,        L"dstorage.dll") )
+    {
+      extern void SK_DStorage_Init (void);
+      SK_RunOnce (SK_DStorage_Init ())
+    }
+    else if (   StrStrI ( lpFileName, SK_TEXT("sl.interposer.dll")) ||
+                StrStrIW (wszModName,        L"sl.interposer.dll") )
+    {
+      SK_COMPAT_CheckStreamlineSupport ();
+    }
+    else if (   StrStrI ( lpFileName, SK_TEXT("sl.dlss_g.dll")) ||
+                StrStrIW (wszModName,        L"sl.dlss_g.dll") )
+    {
+      SK_COMPAT_CheckStreamlineSupport ();
+    }
 
 #if 0
     if (! config.platform.silent) {
@@ -772,6 +788,8 @@ LoadLibrary_Marshal ( LPVOID   lpRet,
       if (StrStrIW (compliant_path, L"rxcore"))
         SK_LoadLibraryW (L"xinput1_4.dll");
 
+      bool bVulkanLayerDisabled = false;
+
       // Windows Defender likes to deadlock in the Steam Overlay
       if (StrStrIW (compliant_path, L"Windows Defender"))
       {
@@ -779,9 +797,79 @@ LoadLibrary_Marshal ( LPVOID   lpRet,
         hMod = nullptr;
       }
 
-      else if (/*config.compat.disable_dxdiag && */ StrStrIW (compliant_path, L"dxdiagn.dll"))
+      else if (SK_GetCallingDLL (lpRet) == SK_GetModuleHandle (L"vulkan-1.dll") && config.apis.NvAPI.vulkan_bridge == 1)
       {
-        dll_log->Log ( L"[DLL Loader]  ** Disabling DxDiagn because it is slow as hell (!!)" );
+        if (StrStrIW (compliant_path, L"graphics-hook"))
+        {
+          SK_RunOnce (
+            dll_log->Log (L"[DLL Loader]  ** Disabling OBS's Vulkan Layer because VulkanBridge is active.")
+          );
+
+          bVulkanLayerDisabled = true;
+        }
+
+        else if (StrStrIW (compliant_path, L"VkLayer_steam_fossilize"))
+        {
+          SK_RunOnce (
+            dll_log->Log (L"[DLL Loader]  ** Disabling Steam's Vulkan Layer because VulkanBridge is active.")
+          );
+
+          bVulkanLayerDisabled = true;
+        }
+
+        //else if (StrStrIW (compliant_path, L"SteamOverlayVulkanLayer"))
+        //{
+        //  SK_RunOnce (
+        //    dll_log->Log (L"[DLL Loader]  ** Disabling Steam's Vulkan Layer because VulkanBridge is active.")
+        //  );
+        //
+        //  bVulkanLayerDisabled = true;
+        //}
+
+        //else if (StrStrIW (compliant_path, L"RTSSVkLayer"))
+        //{
+        //  SK_RunOnce (
+        //    dll_log->Log (L"[DLL Loader]  ** Disabling RTSS's Vulkan Layer because VulkanBridge is active.")
+        //  );
+        //
+        //  bVulkanLayerDisabled = true;
+        //}
+      }
+
+      if (bVulkanLayerDisabled)
+      {
+        SK_SetLastError (ERROR_MOD_NOT_FOUND);
+
+        hMod = nullptr;
+      }
+
+      else if (config.nvidia.bugs.bypass_ansel && StrStrIW (compliant_path, L"NvCamera"))
+      {
+        SK_RunOnce (
+          dll_log->Log (L"[DLL Loader]  ** Disabling NvCamera because it's unstable.")
+        );
+
+        SK_SetLastError (ERROR_MOD_NOT_FOUND);
+
+        hMod = nullptr;
+      }
+
+      else if (config.nvidia.bugs.bypass_ansel && StrStrIW (compliant_path, L"NvTelemetry"))
+      {
+        SK_RunOnce (
+          dll_log->Log (L"[DLL Loader]  ** Disabling NvTelemetry because it's unstable.")
+        );
+
+        SK_SetLastError (ERROR_MOD_NOT_FOUND);
+
+        hMod = nullptr;
+      }
+
+      else if ((! config.compatibility.allow_dxdiagn) && StrStrIW (compliant_path, L"dxdiagn.dll"))
+      {
+        SK_RunOnce (
+          dll_log->Log (L"[DLL Loader]  ** Disabling DxDiagn because it is slow as hell (!!)")
+        );
 
         SK_SetLastError (ERROR_MOD_NOT_FOUND);
         hMod = nullptr;
@@ -980,10 +1068,82 @@ LoadLibraryEx_Marshal ( LPVOID   lpRet, LPCWSTR lpFileName,
                     compliant_path =
                          (wchar_t *)lpFileName;
   }
+  
+  bool bVulkanLayerDisabled = false;
 
-  if (/*config.compat.disable_dxdiag && */ StrStrIW (compliant_path, L"dxdiagn.dll"))
+  if (SK_GetCallingDLL (lpRet) == SK_GetModuleHandle (L"vulkan-1.dll") && config.apis.NvAPI.vulkan_bridge == 1)
   {
-    dll_log->Log ( L"[DLL Loader]  ** Disabling DxDiagn because it is slow as hell (!!)" );
+    if (StrStrIW (compliant_path, L"graphics-hook"))
+    {
+      SK_RunOnce (
+        dll_log->Log (L"[DLL Loader]  ** Disabling OBS's Vulkan Layer because VulkanBridge is active.")
+      );
+
+      bVulkanLayerDisabled = true;
+    }
+
+    else if (StrStrIW (compliant_path, L"VkLayer_steam_fossilize"))
+    {
+      SK_RunOnce (
+        dll_log->Log (L"[DLL Loader]  ** Disabling Steam's Vulkan Layer because VulkanBridge is active.")
+      );
+
+      bVulkanLayerDisabled = true;
+    }
+
+    //else if (StrStrIW (compliant_path, L"SteamOverlayVulkanLayer"))
+    //{
+    //  SK_RunOnce (
+    //    dll_log->Log (L"[DLL Loader]  ** Disabling Steam's Vulkan Layer because VulkanBridge is active.")
+    //  );
+    //
+    //  bVulkanLayerDisabled = true;
+    //}
+    //
+    //else if (StrStrIW (compliant_path, L"RTSSVkLayer"))
+    //{
+    //  SK_RunOnce (
+    //    dll_log->Log (L"[DLL Loader]  ** Disabling RTSS's Vulkan Layer because VulkanBridge is active.")
+    //  );
+    //
+    //  bVulkanLayerDisabled = true;
+    //}
+  }
+
+  if (bVulkanLayerDisabled)
+  {
+    SK_SetLastError (ERROR_MOD_NOT_FOUND);
+
+    return nullptr;
+  }
+
+  else if ((! config.compatibility.allow_dxdiagn) && StrStrIW (compliant_path, L"dxdiagn.dll"))
+  {
+    SK_RunOnce (
+      dll_log->Log (L"[DLL Loader]  ** Disabling DxDiagn because it is slow as hell (!!)")
+    );
+
+    SK_SetLastError (ERROR_MOD_NOT_FOUND);
+
+    return nullptr;
+  }
+
+  else if (config.nvidia.bugs.bypass_ansel && StrStrIW (compliant_path, L"NvCamera"))
+  {
+    SK_RunOnce (
+      dll_log->Log (L"[DLL Loader]  ** Disabling NvCamera because it's unstable.")
+    );
+
+    SK_SetLastError (ERROR_MOD_NOT_FOUND);
+
+    return nullptr;
+  }
+
+  else if (config.nvidia.bugs.bypass_ansel && StrStrIW (compliant_path, L"NvTelemetry"))
+  {
+    SK_RunOnce (
+      dll_log->Log (L"[DLL Loader]  ** Disabling NvTelemetry because it's unstable.")
+    );
 
     SK_SetLastError (ERROR_MOD_NOT_FOUND);
 
@@ -1568,7 +1728,6 @@ SK_BootModule (const wchar_t* wszModName)
       loaded_dxgi = true;
     }
 
-#ifdef _M_AMD64
     else if ( config.apis.dxgi.d3d12.hook && StrStrIW (wszModName, L"d3d12.dll") &&
                         (SK_IsInjected () || (! (SK_GetDLLRole () & DLL_ROLE::DXGI))) )
     {
@@ -1576,7 +1735,6 @@ SK_BootModule (const wchar_t* wszModName)
 
       loaded_dxgi = true;
     }
-#endif
 
     else if ( config.apis.d3d9.hook && StrStrIW (wszModName, L"d3d9.dll") &&
                   (SK_IsInjected () || (! (SK_GetDLLRole () & DLL_ROLE::D3D9))) )
@@ -1898,7 +2056,11 @@ SK_EnumLoadedModules (SK_ModuleEnum when)
       SetCurrentThreadDescription (L"[SK] DLL Enumerator");
       SetThreadPriority           (GetCurrentThread (), THREAD_PRIORITY_LOWEST);
 
-      SK_WaitForSingleObject (hWalkDone.m_h, INFINITE);
+      if ( WAIT_TIMEOUT ==
+             SK_WaitForSingleObject (hWalkDone.m_h, 1000UL) )
+      {
+        pLogger->Log (L"Timeout during SK_WalkModules, continuing to prevent deadlock...");
+      }
 
       WaitForInit ();
 
@@ -1960,9 +2122,6 @@ SK_EnumLoadedModules (SK_ModuleEnum when)
       {
         CleanupLog (pLogger);
       }
-
-      if (pWorkingSet != nullptr && pWorkingSet->proc != nullptr)
-                SK_SafeCloseHandle (pWorkingSet->proc);
 
       delete
         std::exchange (pWorkingSet, nullptr);

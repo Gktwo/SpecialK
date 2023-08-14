@@ -123,18 +123,21 @@ protected:
    //   device context's private data or getting TLS on every draw call.
 
 
-#define SK_WRAP_AND_HOOK                     \
-  static SK_D3D11_HookTallyWhacker           \
-                 call_tally;                 \
-                                             \
-  if ((pDevCtx->GetType () != D3D11_DEVICE_CONTEXT_DEFERRED ))\
-  {                                          \
-    call_tally.hooked  ( bWrapped ? 0 : 1 ); \
-    call_tally.wrapped ( bWrapped ? 1 : 0 ); \
-  }                                          \
-                                             \
-  const bool bMustNotIgnore =                \
-    ( call_tally.is_whack () ||              \
+#define SK_WRAP_AND_HOOK                                  \
+  static SK_D3D11_HookTallyWhacker                        \
+                 call_tally;                              \
+                                                          \
+  const bool bIsDevCtxDeferred =                          \
+    pDevCtx->GetType () == D3D11_DEVICE_CONTEXT_DEFERRED; \
+                                                          \
+  if (! bIsDevCtxDeferred)                                \
+  {                                                       \
+    call_tally.hooked  ( bWrapped ? 0 : 1 );              \
+    call_tally.wrapped ( bWrapped ? 1 : 0 );              \
+  }                                                       \
+                                                          \
+  const bool bMustNotIgnore =                             \
+    ( call_tally.is_whack () ||                           \
               (! bWrapped) );
 
 extern const GUID IID_ID3D11Device2;
@@ -193,12 +196,17 @@ D3D11CreateDeviceAndSwapChain_Detour (IDXGIAdapter          *pAdapter,
 __declspec (noinline)
 HRESULT
 WINAPI
-D3D11CoreCreateDevice_Detour ( IDXGIFactory*       pFactory,
-                               IDXGIAdapter*       pAdapter,
-                               UINT                Flags,
-                         const D3D_FEATURE_LEVEL*  pFeatureLevels,
-                               UINT                FeatureLevels,
-                               ID3D11Device**      ppDevice );
+D3D11CoreCreateDevice_Detour (
+          IDXGIFactory       *pFactory,
+          IDXGIAdapter       *pAdapter,
+          D3D_DRIVER_TYPE     DriverType,
+          HINSTANCE           Software,
+          UINT                Flags,
+    const D3D_FEATURE_LEVEL  *pFeatureLevels,
+          UINT                FeatureLevels,
+          INT                 SDKVersion,
+          ID3D11Device      **ppDevice,
+          D3D_FEATURE_LEVEL  *pFeatureLevel );
 
 extern std::unique_ptr <SK_Thread_HybridSpinlock> cs_shader;
 extern std::unique_ptr <SK_Thread_HybridSpinlock> cs_shader_vs;
@@ -1384,12 +1392,16 @@ typedef HRESULT (WINAPI *D3D11CreateDeviceAndSwapChain_pfn)(
   _Out_opt_                            ID3D11DeviceContext**);
 
 typedef HRESULT (WINAPI *D3D11CoreCreateDevice_pfn)(
-          IDXGIFactory*       pFactory,
-          IDXGIAdapter*       pAdapter,
+          IDXGIFactory       *pFactory,
+          IDXGIAdapter       *pAdapter,
+          D3D_DRIVER_TYPE     DriverType,
+          HINSTANCE           Software,
           UINT                Flags,
-    const D3D_FEATURE_LEVEL*  pFeatureLevels,
+    const D3D_FEATURE_LEVEL  *pFeatureLevels,
           UINT                FeatureLevels,
-          ID3D11Device**      ppDevice);
+          INT                 SDKVersion,
+          ID3D11Device      **ppDevice,
+          D3D_FEATURE_LEVEL  *pFeatureLevel);
 
 extern D3D11CreateDevice_pfn             D3D11CreateDevice_Import;
 extern D3D11CoreCreateDevice_pfn         D3D11CoreCreateDevice_Import;
@@ -1714,8 +1726,8 @@ struct SK_D3D11_KnownShaders
       tracked.current_ = &current;
     }
 
-    concurrency::concurrent_unordered_map <ID3D11Device*, std::unordered_map <_T*,      SK_D3D11_ShaderDesc*>>  rev;
-    concurrency::concurrent_unordered_map <ID3D11Device*, std::unordered_map <uint32_t, SK_D3D11_ShaderDesc>>   descs;
+    std::unordered_map <ID3D11Device*, std::unordered_map <_T*,      SK_D3D11_ShaderDesc*>>  rev;
+    std::unordered_map <ID3D11Device*, std::unordered_map <uint32_t, SK_D3D11_ShaderDesc>>   descs;
 
     std::unordered_map <uint32_t, LONG>                  blacklist;
     std::unordered_map <uint32_t, std::string>           names;
@@ -2265,67 +2277,23 @@ using D3D11On12CreateDevice_pfn =
 extern "C" SK_API D3D11On12CreateDevice_pfn extern D3D11On12CreateDevice;
 
 
-#define SK_D3D11_DeclKMT(x) extern "C" __declspec (dllexport) extern \
-                                          FARPROC (x)
+#define SK_D3D11_Decl(x) extern "C" __declspec (dllexport) extern \
+                                       FARPROC (x)
 
-SK_D3D11_DeclKMT (D3D11CreateDeviceForD3D12);
-SK_D3D11_DeclKMT (CreateDirect3D11DeviceFromDXGIDevice);
-SK_D3D11_DeclKMT (CreateDirect3D11SurfaceFromDXGISurface);
-//SK_D3D11_DeclKMT (D3D11On12CreateDevice);
-SK_D3D11_DeclKMT (D3DKMTCloseAdapter);
-SK_D3D11_DeclKMT (D3DKMTDestroyAllocation);
-SK_D3D11_DeclKMT (D3DKMTDestroyContext);
-SK_D3D11_DeclKMT (D3DKMTDestroyDevice);
-SK_D3D11_DeclKMT (D3DKMTDestroySynchronizationObject);
-SK_D3D11_DeclKMT (D3DKMTQueryAdapterInfo);
-SK_D3D11_DeclKMT (D3DKMTSetDisplayPrivateDriverFormat);
-SK_D3D11_DeclKMT (D3DKMTSignalSynchronizationObject);
-SK_D3D11_DeclKMT (D3DKMTUnlock);
-SK_D3D11_DeclKMT (D3DKMTWaitForSynchronizationObject);
-SK_D3D11_DeclKMT (EnableFeatureLevelUpgrade);
-SK_D3D11_DeclKMT (OpenAdapter10);
-SK_D3D11_DeclKMT (OpenAdapter10_2);
-SK_D3D11_DeclKMT (D3D11CoreCreateLayeredDevice);
-SK_D3D11_DeclKMT (D3D11CoreGetLayeredDeviceSize);
-SK_D3D11_DeclKMT (D3D11CoreRegisterLayers);
-SK_D3D11_DeclKMT (D3DKMTCreateAllocation);
-SK_D3D11_DeclKMT (D3DKMTCreateContext);
-SK_D3D11_DeclKMT (D3DKMTCreateDevice);
-SK_D3D11_DeclKMT (D3DKMTCreateSynchronizationObject);
-SK_D3D11_DeclKMT (D3DKMTEscape);
-SK_D3D11_DeclKMT (D3DKMTGetContextSchedulingPriority);
-SK_D3D11_DeclKMT (D3DKMTGetDeviceState);
-SK_D3D11_DeclKMT (D3DKMTGetDisplayModeList);
-SK_D3D11_DeclKMT (D3DKMTGetMultisampleMethodList);
-SK_D3D11_DeclKMT (D3DKMTGetRuntimeData);
-SK_D3D11_DeclKMT (D3DKMTGetSharedPrimaryHandle);
-SK_D3D11_DeclKMT (D3DKMTLock);
-SK_D3D11_DeclKMT (D3DKMTOpenAdapterFromHdc);
-SK_D3D11_DeclKMT (D3DKMTOpenResource);
-SK_D3D11_DeclKMT (D3DKMTPresent);
-SK_D3D11_DeclKMT (D3DKMTQueryAllocationResidency);
-SK_D3D11_DeclKMT (D3DKMTQueryResourceInfo);
-SK_D3D11_DeclKMT (D3DKMTRender);
-SK_D3D11_DeclKMT (D3DKMTSetAllocationPriority);
-SK_D3D11_DeclKMT (D3DKMTSetContextSchedulingPriority);
-SK_D3D11_DeclKMT (D3DKMTSetDisplayMode);
-SK_D3D11_DeclKMT (D3DKMTSetGammaRamp);
-SK_D3D11_DeclKMT (D3DKMTSetVidPnSourceOwner);
-SK_D3D11_DeclKMT (D3DKMTWaitForVerticalBlankEvent);
-SK_D3D11_DeclKMT (D3DPerformance_BeginEvent);
-SK_D3D11_DeclKMT (D3DPerformance_EndEvent);
-SK_D3D11_DeclKMT (D3DPerformance_GetStatus);
-SK_D3D11_DeclKMT (D3DPerformance_SetMarker);
-
-
-
-
-
-
-
-
-
-
+SK_D3D11_Decl (D3D11CreateDeviceForD3D12);
+SK_D3D11_Decl (CreateDirect3D11DeviceFromDXGIDevice);
+SK_D3D11_Decl (CreateDirect3D11SurfaceFromDXGISurface);
+//SK_D3D11_Decl (D3D11On12CreateDevice);
+SK_D3D11_Decl (EnableFeatureLevelUpgrade);
+SK_D3D11_Decl (OpenAdapter10);
+SK_D3D11_Decl (OpenAdapter10_2);
+SK_D3D11_Decl (D3D11CoreCreateLayeredDevice);
+SK_D3D11_Decl (D3D11CoreGetLayeredDeviceSize);
+SK_D3D11_Decl (D3D11CoreRegisterLayers);
+SK_D3D11_Decl (D3DPerformance_BeginEvent);
+SK_D3D11_Decl (D3DPerformance_EndEvent);
+SK_D3D11_Decl (D3DPerformance_GetStatus);
+SK_D3D11_Decl (D3DPerformance_SetMarker);
 
 
 

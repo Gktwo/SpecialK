@@ -29,6 +29,9 @@
 
 #include <SpecialK/render/dxgi/dxgi_swapchain.h>
 #include <SpecialK/render/d3d11/d3d11_core.h>
+#include <SpecialK/render/dstorage/dstorage.h>
+
+#include <imgui/font_awesome.h>
 
 extern float __target_fps;
 
@@ -80,10 +83,6 @@ SK_ImGui_NV_DepthBoundsD3D11 (void)
                                          fMin, fMax );
   }
 }
-
-extern bool
-WINAPI
-SK_DXGI_IsTrackingBudget (void);
 
 SK_LazyGlobal <SK_D3D11_TexCacheResidency_s> SK_D3D11_TexCacheResidency;
 
@@ -226,6 +225,104 @@ SK_ImGui_DrawTexCache_Chart (void)
   }
 }
 
+void
+SK_ImGui_DrawVRAMGauge (void)
+{
+  uint64_t vram_used   = SK_GPU_GetVRAMUsed   (0),
+           vram_budget = SK_GPU_GetVRAMBudget (0);
+  
+  auto     vram_quota  =
+    static_cast <uint64_t> (
+      static_cast <double> (vram_budget) *
+        (config.render.dxgi.warn_if_vram_exceeds / 100.0f));
+  
+  float vram_used_percent =
+    static_cast <float> (
+      static_cast <double> (vram_used) /
+      static_cast <double> (vram_budget)
+    );
+  
+  static constexpr size_t max_len = 31;
+  
+  if ( config.render.dxgi.warn_if_vram_exceeds > 0.0f &&
+       vram_used > vram_quota )
+  {
+    ImGui::TextColored ( ImVec4 (1.f, 1.f, 0.0f, 1.f),
+                           ICON_FA_EXCLAMATION_TRIANGLE " " );
+  
+    if (ImGui::IsItemHovered ())
+    {
+      static char szQuota [max_len + 1] = { };
+  
+      std::string_view vQuota =
+        SK_File_SizeToStringAF (vram_quota, 0, 2);
+  
+      strncpy (szQuota, vQuota.data (), std::min (max_len, vQuota.size ()));
+  
+      ImGui::BeginTooltip ( );
+      ImGui::Text         ( "VRAM Quota (%hs) Exhausted",
+                             szQuota );
+      ImGui::Separator    ( );
+      ImGui::BulletText   ( "Consider lowering in-game graphics settings or"
+                            " closing background applications." );
+      ImGui::BulletText   ( "Right-click the VRAM gauge to set VRAM quotas"
+                            " and/or reset quota warnings." );
+      ImGui::EndTooltip   ( );
+    }
+  
+    ImGui::SameLine ();
+  }
+  
+  ImGui::BeginGroup ();
+  
+  static char szUsed   [max_len + 1] = { },
+              szBudget [max_len + 1] = { };
+  
+  auto      vUsed   = SK_File_SizeToStringAF ( vram_used,   0, 2 );
+  strncpy (szUsed,     vUsed.data (), std::min (max_len,   vUsed.size ()));
+  
+  auto      vBudget = SK_File_SizeToStringAF ( vram_budget, 0, 2 );
+  strncpy (szBudget, vBudget.data (), std::min (max_len, vBudget.size ()));
+  
+  static char                  label_txt [max_len * 2 + 1] = { };
+  std::string_view label_view (label_txt, max_len * 2);
+       size_t      label_len         =
+    SK_FormatStringView ( label_view,
+                            "%0.2f%% of Available VRAM Used\t(%hs / %hs)",
+                              vram_used_percent * 100.0f, szUsed, szBudget );
+  
+  label_txt [ std::max ((size_t)0,
+              std::min ((size_t)max_len * 2, label_len)) ] = '\0';
+  
+  ImColor label_color =
+    ImColor::HSV ((1.0f - vram_used_percent) * 0.278f, 0.88f, 0.666f);
+  
+  if (config.render.dxgi.warn_if_vram_exceeds > 0)
+  {
+    float x_pos =
+      ImGui::GetCursorPosX ();
+    ImGui::PushStyleColor  (ImGuiCol_PlotHistogram, ImColor (0.3f, 0.3f, 0.3f, 1.0f));
+    ImGui::ProgressBar     (
+      static_cast <float>
+        ( static_cast <double> (vram_quota) /
+          static_cast <double> (vram_budget) ), ImVec2 (-1.0f, 0.0f), ""
+    );
+    ImGui::PopStyleColor   ();
+    ImGui::SameLine        ();
+    ImGui::SetCursorPosX   (x_pos);
+  }
+  
+  ImGui::PushStyleColor (ImGuiCol_FrameBg,       ImColor (0.0f, 0.0f, 0.0f, 0.0f));
+  ImGui::PushStyleColor (ImGuiCol_PlotHistogram, label_color);
+  ImGui::ProgressBar    (
+    static_cast <float>
+      ( static_cast <double> (vram_used) /
+        static_cast <double> (vram_budget) ), ImVec2 (-1.0f, 0.0f), label_txt
+  );
+  ImGui::PopStyleColor (2);
+  ImGui::EndGroup      ( );
+}
+
 
 extern bool SK_D3D11_ShaderModDlg   (SK_TLS *pTLS = SK_TLS_Bottom ());
 extern void SK_DXGI_UpdateLatencies (IDXGISwapChain *pSwapChain);
@@ -245,6 +342,9 @@ SK::ControlPanel::D3D11::Draw (void)
   if (show_shader_mod_dlg)
       show_shader_mod_dlg = SK_D3D11_ShaderModDlg ();
 
+  static auto &rb =
+    SK_GetCurrentRenderBackend ();
+
   bool d3d11 =
     static_cast <int> (render_api) & static_cast <int> (SK_RenderAPI::D3D11);
   bool d3d12 =
@@ -252,7 +352,8 @@ SK::ControlPanel::D3D11::Draw (void)
 
   // Is the underlying graphics API actually something else?
   bool indirect =
-    (SK_GL_OnD3D11);
+    ( SK_GL_OnD3D11 || SK_DXGI_VK_INTEROP_TYPE_NONE !=
+                  SK_Render_GetVulkanInteropSwapChainType (rb.swapchain) );
 
   if (                                 (d3d11 &&
        ImGui::CollapsingHeader (u8"Direct3D 11 选项", ImGuiTreeNodeFlags_DefaultOpen)) ||
@@ -319,6 +420,138 @@ SK::ControlPanel::D3D11::Draw (void)
     // D3D12
     else if (! indirect)
     {
+      if (SK_DStorage_IsLoaded ())
+      {
+        ImGui::PushStyleColor (ImGuiCol_Header,        ImVec4 (0.90f, 0.68f, 0.02f, 0.45f));
+        ImGui::PushStyleColor (ImGuiCol_HeaderHovered, ImVec4 (0.90f, 0.72f, 0.07f, 0.80f));
+        ImGui::PushStyleColor (ImGuiCol_HeaderActive,  ImVec4 (0.87f, 0.78f, 0.14f, 0.80f));
+        ImGui::TreePush       ("");
+
+        if (ImGui::CollapsingHeader ("Direct Storage", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+          ImGui::BeginGroup ();
+          ImGui::
+            TextUnformatted ("GDeflate Support: ");
+          ImGui::
+            TextUnformatted ("GDeflate Usage: ");
+          ImGui::EndGroup   ();
+          ImGui::SameLine   ();
+          ImGui::BeginGroup ();
+          DSTORAGE_COMPRESSION_SUPPORT gdeflate_support =
+            SK_DStorage_GetGDeflateSupport ();
+          if (gdeflate_support == DSTORAGE_COMPRESSION_SUPPORT::DSTORAGE_COMPRESSION_SUPPORT_NONE)
+          {
+            ImGui::Text     ("N/A");
+          }
+          else
+          {
+            const bool gdeflate_cpu_fallback =
+              (gdeflate_support & DSTORAGE_COMPRESSION_SUPPORT_CPU_FALLBACK) != 0;
+            const bool gdeflate_gpu_fallback =
+              (gdeflate_support & DSTORAGE_COMPRESSION_SUPPORT_GPU_FALLBACK) != 0;
+            ImGui::Text     (
+              "%hs, using %hs",
+                ( gdeflate_cpu_fallback ? "CPU Fallback"
+                                        :
+                  gdeflate_gpu_fallback ? "GPU Fallback"
+                                        : "GPU Optimized" ),
+                    (gdeflate_support & DSTORAGE_COMPRESSION_SUPPORT_USES_COMPUTE_QUEUE) != 0 ?
+                                          "Compute Queue"
+                                        : "Copy Queue"
+            );
+          }
+          ImGui::
+            TextUnformatted ( SK_DStorage_IsUsingGDeflate () ? "Yes"
+                                                             : "No" );
+          ImGui::EndGroup   ();
+
+#if 0
+          ImGui::BeginGroup ();
+          ImGui::
+            TextUnformatted ("IO Request Submit Threads: ");
+          ImGui::
+            TextUnformatted ("CPU Decompression Threads: ");
+          ImGui::EndGroup   ();
+          ImGui::SameLine   ();
+          ImGui::BeginGroup ();
+          ImGui::Text       ("%lu", SK_DStorage_GetNumSubmitThreads                  ());
+          ImGui::Text       ("%li", SK_DStorage_GetNumBuiltInCpuDecompressionThreads ());
+          ImGui::EndGroup   ();
+#endif
+
+          if (SK_GetCurrentGameID () == SK_GAME_ID::RatchetAndClank_RiftApart)
+          {
+            if (ImGui::TreeNode ("Priorities (Ratchet and Clank)"))
+            {
+              auto &dstorage =
+                SK_GetDLLConfig ()->get_section (L"RatchetAndClank.DStorage");
+
+              bool changed = false;
+
+              auto PriorityComboBox = [&](const char *szName, const wchar_t *wszKey)->bool
+              {
+                int prio =
+                  SK_DStorage_PriorityFromStr (dstorage.get_cvalue (wszKey).c_str ()) + 1;
+
+                bool changed =
+                  ImGui::Combo (szName, &prio, "Low\0Normal\0High\0Realtime\0\0");
+
+                if (ImGui::IsItemHovered ())
+                    ImGui::SetTooltip ("A game restart is required to change this...");
+
+                if (changed)
+                {
+                  dstorage.add_key_value (wszKey,
+                    SK_DStorage_PriorityToStr ((DSTORAGE_PRIORITY)(prio - 1))
+                  );
+                }
+
+                return changed;
+              };
+
+              changed |=
+                PriorityComboBox (      "Bulk Load",           L"BulkPriority");
+              changed |=
+                PriorityComboBox (    "Loose reads",      L"LooseReadPriority");
+              changed |=
+                PriorityComboBox (        "Texture",        L"TexturePriority");
+              changed |=
+                PriorityComboBox ("NxStorage Index", L"NxStorageIndexPriority");
+
+              if (changed)
+                SK_SaveConfig ();
+
+              ImGui::TreePop  ();
+            }
+          }
+
+          if (ImGui::TreeNode ("Overrides"))
+          {
+            bool changed = false;
+
+            changed |=
+              ImGui::Checkbox ("Disable BypassIO", &config.render.dstorage.disable_bypass_io);
+
+            changed |=
+              ImGui::Checkbox ("Disable GPU Decompression", &config.render.dstorage.disable_gpu_decomp);
+
+            changed |=
+              ImGui::Checkbox ("Force File Buffering", &config.render.dstorage.force_file_buffering);
+
+            changed |=
+              ImGui::Checkbox ("Disable Telemetry", &config.render.dstorage.disable_telemetry);
+
+            if (changed)
+              SK_SaveConfig ();
+
+            ImGui::TreePop ();
+          }
+        }
+
+        ImGui::TreePop       ( );
+        ImGui::PopStyleColor (3);
+      }
+
       auto currentFrame =
         SK_GetFramesDrawn ();
 
@@ -546,9 +779,6 @@ SK::ControlPanel::D3D11::Draw (void)
     {
       auto _ResetLimiter = [&](void) -> void
       {
-        static auto& rb =
-          SK_GetCurrentRenderBackend ();
-
         auto *pLimiter =
           SK::Framerate::GetLimiter (rb.swapchain.p, false);
 
@@ -584,13 +814,11 @@ SK::ControlPanel::D3D11::Draw (void)
         }
       }
 
-      else ImGui::Spacing ();
-
       if (config.render.framerate.flip_discard)
       {
         bool waitable_ = config.render.framerate.swapchain_wait > 0;
 
-        if (! d3d12)
+        if (! (d3d12 || indirect))
         {
           if (ImGui::Checkbox (u8"Waitable SwapChain", &waitable_))
           {
@@ -622,7 +850,7 @@ SK::ControlPanel::D3D11::Draw (void)
           {
             ImGui::BeginTooltip ();
             ImGui::Text         (u8"Reduces Input Latency in SK's Framerate Limiter");
-            if (SK_GetCurrentRenderBackend ().api != SK_RenderAPI::D3D12)
+            if (rb.api != SK_RenderAPI::D3D12)
             {
               ImGui::Separator  ();
               ImGui::BulletText (u8"全屏独占在启用时将不起作用");
@@ -699,7 +927,7 @@ SK::ControlPanel::D3D11::Draw (void)
       config.render.framerate.present_interval =
         std::max (-1, std::min (4, config.render.framerate.present_interval));
 
-      if (! d3d12)
+      if (! (d3d12 || indirect))
       {
         if (ImGui::InputInt (u8"BackBuffer计数", &config.render.framerate.buffer_count))
         {
@@ -726,7 +954,7 @@ SK::ControlPanel::D3D11::Draw (void)
       if (config.render.framerate.buffer_count <  0)
           config.render.framerate.buffer_count = -1;
 
-      if (! d3d12)
+      if (! (d3d12 || indirect))
       {
         if (ImGui::InputInt (u8"最大设备延迟", &config.render.framerate.pre_render_limit))
         {
@@ -740,7 +968,7 @@ SK::ControlPanel::D3D11::Draw (void)
                                                                         config.render.framerate.buffer_count + 1 );
 
             SK_ComQIPtr <IDXGISwapChain>
-                pSwapChain (SK_GetCurrentRenderBackend ().swapchain);
+                pSwapChain (rb.swapchain);
             if (pSwapChain != nullptr)
             {
               SK_DXGI_UpdateLatencies (pSwapChain);
@@ -963,7 +1191,7 @@ SK::ControlPanel::D3D11::Draw (void)
       OSD::DrawVideoCaptureOptions ();
     }
 
-    if (d3d11) ImGui::SameLine ();
+    if (d3d11 && (! indirect)) ImGui::SameLine ();
 
     const bool advanced =
       d3d11 && ImGui::TreeNode (u8"高级 (Debug)###Advanced_D3D11");
@@ -997,9 +1225,6 @@ SK::ControlPanel::D3D11::Draw (void)
       
       if (config.render.dxgi.debug_layer)
       {
-        static auto& rb =
-          SK_GetCurrentRenderBackend ();
-
         SK_ComQIPtr <ID3D11Debug>
             pDebugD3D11 (rb.device);
         if (pDebugD3D11 != nullptr)
@@ -1479,6 +1704,71 @@ SK::ControlPanel::D3D11::Draw (void)
           ImGui::BulletText (u8"需要重新启动游戏");
         }
       }
+    }
+
+    ImGui::Separator  ();
+
+    SK_ImGui_DrawVRAMGauge ();
+
+    ImGui::OpenPopupOnItemClick ("DXGI_VRAM_BUDGET", 1);
+
+    if (ImGui::IsItemHovered ())
+    {
+      ImGui::BeginTooltip    ();
+      ImGui::TextUnformatted ("Right-click to Configure VRAM Quotas or Reset Warnings");
+      ImGui::Separator       ();
+      ImGui::TreePush        ("");
+      ImGui::TextUnformatted ("The statistics shown are graphics memory actively used by the GAME (Resident VRAM) vs. VRAM the driver can dedicate to the GAME (VRAM Budget).\r\n\r\n");
+      ImGui::BulletText      ("This differs significantly from all current monitoring tools...\r\n\r\n");
+      ImGui::TreePush        ("");
+      ImGui::TextUnformatted ("MSI Afterburner, for example, can measure system-wide graphics memory allocation or per-process allocation depending on how it is configured,");
+      ImGui::TextUnformatted ("but is incapable of measuring Resident VRAM, nor does it know anything about per-process limits on VRAM (Budgets).\r\n\r\n");
+      ImGui::TreePop         ();
+      ImGui::TextUnformatted ("Correctly measuring a game's VRAM requirements involves knowledge of VRAM Residency and per-process VRAM Budgets!\r\n");
+      ImGui::TextUnformatted ("Budgets change dynamically in WDDM 2.0+ when there is demand by other applications for VRAM that reduces the amount available to the game.\r\n\r\n");
+      ImGui::BulletText      ("Special K's VRAM gauge adjusts to changing VRAM Budgets in real-time to correctly assess VRAM availability.");
+      ImGui::TreePop         ();
+      ImGui::Separator       ();
+      ImGui::TextUnformatted ("VRAM statistics for game sessions are summarized at exit in logs/dxgi_budget.log");
+      ImGui::EndTooltip      ();
+    }
+
+    if (ImGui::BeginPopup ("DXGI_VRAM_BUDGET"))
+    {
+      bool warn =
+        config.render.dxgi.warn_if_vram_exceeds > 0.0f;
+
+      if (ImGui::Checkbox ( warn ? "Warn if Used VRAM Exceeds"
+                                 : "Warn if Useable VRAM is Low", &warn ))
+      {
+        if (warn) config.render.dxgi.warn_if_vram_exceeds = 95.0f;
+        else      config.render.dxgi.warn_if_vram_exceeds =  0.0f;
+      }
+
+      if (config.render.dxgi.warn_if_vram_exceeds > 0.0f)
+      {
+        ImGui::SameLine ();
+
+        static float limit =
+          config.render.dxgi.warn_if_vram_exceeds;
+
+        SK_ImGui::SliderFloatDeferred (
+          "###VRAM_QUOTA", &config.render.dxgi.warn_if_vram_exceeds,
+                           &limit, 15.0f, 105.0f, "%2.2f%% of Available",
+                                    2.0f );
+
+        if (config.render.dxgi.warned_low_vram)
+        {
+          ImGui::SameLine ();
+
+          if (ImGui::Button ("Reset Warning"))
+          {
+            config.render.dxgi.warned_low_vram = false;
+          }
+        }
+      }
+
+      ImGui::EndPopup     ();
     }
 
     ImGui::TreePop       ( );

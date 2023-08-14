@@ -75,8 +75,8 @@ SK_Timestamp (wchar_t* const out)
   wchar_t date [48] = { };
   wchar_t time [48] = { };
 
-  GetDateFormat (LOCALE_INVARIANT, DATE_SHORTDATE,    &stLogTime, nullptr, date, 47);
-  GetTimeFormat (LOCALE_INVARIANT, TIME_NOTIMEMARKER, &stLogTime, nullptr, time, 47);
+  GetDateFormatEx (LOCALE_NAME_INVARIANT, DATE_SHORTDATE,    &stLogTime, nullptr, date, 47, nullptr);
+  GetTimeFormatEx (LOCALE_NAME_INVARIANT, TIME_NOTIMEMARKER, &stLogTime, nullptr, time, 47);
 
   out [0] = L'\0';
 
@@ -107,13 +107,6 @@ SK_Log_AsyncFlushThreadPump (LPVOID)
     hFlushReq, __SK_DLL_TeardownEvent
   };
 
-  // TODO:  Consider an interlocked singly-linked list instead
-  //
-  //         ( The only drawback is Windows 7 does not support
-  //             these in 64-bit code ... but what's new? )
-  //
-  //    _Have I remembered to mention how much Windows 7 sucks recently?_
-  //
   while (! ReadAcquire (&__SK_DLL_Ending))
   {
     if (! flush_set->empty ())

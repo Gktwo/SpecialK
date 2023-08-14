@@ -452,7 +452,7 @@ SteamAPI_RunCallbacks_throttled (void)
 {
   static UINT64 ullLastCallback = 0;
 
-  if ((SK_QueryPerf ().QuadPart - ullLastCallback) > sk::narrow_cast <UINT64>((double)SK_QpcFreq * 0.025))
+  if ((SK_QueryPerf ().QuadPart - ullLastCallback) > sk::narrow_cast <UINT64>((double)SK_PerfFreq * 0.025))
   {
     ullLastCallback =
       SK_QueryPerf ().QuadPart;
@@ -1399,16 +1399,16 @@ void
 WINAPI
 ExitProcess_Detour (UINT uExitCode)
 {
+  SK_LOG0 ( ( L"Software Is Ending With Exit Code (%x)",
+                    uExitCode ), __SK_SUBSYSTEM__ );
+
   // Since many, many games don't shutdown cleanly, let's unload ourself.
   SK_SelfDestruct ();
 
-  if (ExitProcess_Original != nullptr)
-  {
-    return SK_ExitProcess (uExitCode);
-  }
+  auto jmpTerminateProcess =
+    SK_Hook_GetTrampoline (TerminateProcess);
 
-  else
-    ExitProcess (uExitCode);
+  jmpTerminateProcess (GetCurrentProcess (), uExitCode);
 }
 
 using RtlExitUserProcess_pfn = int (WINAPI*)(NTSTATUS);
@@ -3508,26 +3508,35 @@ RaiseException_Detour (
           _ReturnAddress (), wszCallerName
         );
 
-        SK_StripUserNameFromPathW (wszCallerName);
+        bool print = true;
 
-        SK_LOG0 ( ( L"Exception Code: %x  - Flags: (%hs) -  Arg Count: %u   "
-                    L"[ Calling Module:  %s ]", dwExceptionCode,
-                        SK_ExceptionFlagsToStr (dwExceptionFlags),
-                          nNumberOfArguments,      wszCallerName),
-                    L"SEH-Except"
-        );
+        // NVIDIA, just STFU please :)
+        if (StrStrIW (wszCallerName, L"MessageBus.dll"))
+          print = false;
 
-        char szSymbol [512] = { };
+        if (print)
+        {
+          SK_StripUserNameFromPathW (wszCallerName);
 
-        SK_GetSymbolNameFromModuleAddr (
-                             SK_GetCallingDLL (),
-                    (uintptr_t)_ReturnAddress (),
-                                        szSymbol, 511 );
+          SK_LOG0 ( ( L"Exception Code: %x  - Flags: (%hs) -  Arg Count: %u   "
+                      L"[ Calling Module:  %s ]", dwExceptionCode,
+                          SK_ExceptionFlagsToStr (dwExceptionFlags),
+                            nNumberOfArguments,      wszCallerName),
+                      L"SEH-Except"
+          );
 
-        SK_LOG0 ( ( L"  >> Best-Guess For Source of Exception:  %hs",
-                    szSymbol ),
-                    L"SEH-Except"
-        );
+          char szSymbol [512] = { };
+
+          SK_GetSymbolNameFromModuleAddr (
+                               SK_GetCallingDLL (),
+                      (uintptr_t)_ReturnAddress (),
+                                          szSymbol, 511 );
+
+          SK_LOG0 ( ( L"  >> Best-Guess For Source of Exception:  %hs",
+                      szSymbol ),
+                      L"SEH-Except"
+          );
+        }
       }
     }
   }
@@ -3637,6 +3646,22 @@ SK::Diagnostics::Debugger::Allow  (bool bAllow)
   if (config.compatibility.disable_debug_features)
   {
     SK_MinHook_Init ();
+  }
+
+  // This is hooked so that we can catch and cleanly unload
+  //   if a game crashes during exit.
+  SK_CreateDLLHook2 (    L"kernel32",
+                          "ExitProcess",
+                           ExitProcess_Detour,
+  static_cast_p2p <void> (&ExitProcess_Original) );
+
+  SK_CreateDLLHook2 (      L"kernel32",
+                          "TerminateProcess",
+                           TerminateProcess_Detour,
+  static_cast_p2p <void> (&TerminateProcess_Original) );
+  
+  if (config.compatibility.disable_debug_features)
+  {
     return false;
   }
 
@@ -3654,13 +3679,6 @@ SK::Diagnostics::Debugger::Allow  (bool bAllow)
     static bool          basic_init = false;
     if (! std::exchange (basic_init, true))
     {
-      SK_CreateDLLHook2 (      L"kernel32",
-                                "TerminateProcess",
-                                 TerminateProcess_Detour,
-        static_cast_p2p <void> (&TerminateProcess_Original) );
-
-
-
       SK_CreateDLLHook2 (       L"kernel32",
                                 "SetThreadPriority",
                                  SetThreadPriority_Detour,
@@ -3709,10 +3727,10 @@ SK::Diagnostics::Debugger::Allow  (bool bAllow)
                              RtlReleasePebLock_Detour,
     static_cast_p2p <void> (&RtlReleasePebLock_Original) );
 
-    SK_CreateDLLHook2 (      L"kernel32",
-                          "TerminateThread",
-                           TerminateThread_Detour,
-  static_cast_p2p <void> (&TerminateThread_Original) );
+    SK_CreateDLLHook2 (    L"kernel32",
+                            "TerminateThread",
+                             TerminateThread_Detour,
+    static_cast_p2p <void> (&TerminateThread_Original) );
 #endif
 
 #ifdef _EXTENDED_DEBUG
@@ -3803,11 +3821,6 @@ SK::Diagnostics::Debugger::Allow  (bool bAllow)
                                   "RtlExitUserThread",
                                    RtlExitUserThread_Detour,
           static_cast_p2p <void> (&RtlExitUserThread_Original) );
-
-        SK_CreateDLLHook2 (      L"kernel32",
-                                  "ExitProcess",
-                                   ExitProcess_Detour,
-          static_cast_p2p <void> (&ExitProcess_Original) );
       }
 
       SK_CreateDLLHook2 (      L"kernel32",
@@ -3937,26 +3950,20 @@ BOOL
 WINAPI
 SK_IsDebuggerPresent (void) noexcept
 {
-  __try {
-    if (IsDebuggerPresent_Original == nullptr)
-    {
-      if (ReadAcquire (&__SK_DLL_Attached))
-        SK_RunOnce (SK::Diagnostics::Debugger::Allow ()); // DONTCARE, just init
-    }
-
-    if (bRealDebug)
-      return TRUE;
-
-    if (     IsDebuggerPresent_Original != nullptr )
-      return IsDebuggerPresent_Original ();
-
-    return
-      IsDebuggerPresent ();
+  if (IsDebuggerPresent_Original == nullptr)
+  {
+    if (ReadAcquire (&__SK_DLL_Attached))
+      SK_RunOnce (SK::Diagnostics::Debugger::Allow ()); // DONTCARE, just init
   }
-
-  __finally {
-    return FALSE;
-  }
+  
+  if (bRealDebug)
+    return TRUE;
+  
+  if (     IsDebuggerPresent_Original != nullptr )
+    return IsDebuggerPresent_Original ();
+  
+  return
+    IsDebuggerPresent ();
 }
 
 
@@ -4554,11 +4561,11 @@ SymGetSearchPathW (
   _Out_opt_ PWSTR  SearchPath,
   _In_      DWORD  SearchPathLength)
 {
+  if (SearchPath != nullptr)
+  {  *SearchPath = L'\0';  }
+
   if (SymGetSearchPathW_Imp != nullptr)
   {
-    if (SearchPath != nullptr)
-    {  *SearchPath = L'\0';  }
-
     BOOL bRet =
       SymGetSearchPathW_Imp (hProcess, SearchPath, SearchPathLength);
 

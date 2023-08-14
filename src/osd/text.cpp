@@ -646,6 +646,9 @@ SK_DrawOSD (void)
   if (ReadAcquire (&osd_init) == FALSE)
     SK_InstallOSD ();
 
+  if (! config.osd.show)
+    return FALSE;
+
 #if 0
   // Automatically free VRAM cache when it is a bit on the excessive side
   if ((process_stats.memory.page_file_bytes >> 30ULL) > 28) {
@@ -901,7 +904,7 @@ SK_DrawOSD (void)
   }
 
   // Poll GPU stats...
-  if (config.gpu.show || config.mem.show)
+  if (config.gpu.show)
     SK_PollGPU ();
 
   gpu_sensors_t* gpu_stats =
@@ -916,7 +919,7 @@ if (gpu_stats != nullptr)
   for (int i = 0; i < gpu_stats->num_gpus; i++)
   {
     OSD_G_PRINTF "  GPU%i   :            %#3u%%",
-      i, gpu_stats->gpus [i].loads_percent.gpu
+      i, gpu_stats->gpus [i].loads_percent.gpu / 1000
     OSD_END
 
     if (nvapi_init && gpu_stats->gpus [i].loads_percent.vid > 0)
@@ -926,7 +929,7 @@ if (gpu_stats != nullptr)
 
       // Raster 3D
       OSD_G_PRINTF ",  VID%i %#3u%%  ,",
-        i, gpu_stats->gpus [i].loads_percent.vid
+        i, gpu_stats->gpus [i].loads_percent.vid / 1000
       OSD_END
     } else {
       // Vector 3D (subtract 1 space)
@@ -936,24 +939,27 @@ if (gpu_stats != nullptr)
       OSD_G_PRINTF ",              " OSD_END
     }
 
-    OSD_G_PRINTF " %#4u MHz",
-          gpu_stats->gpus [i].clocks_kHz.gpu / 1000UL
-    OSD_END
+    if (gpu_stats->gpus [i].clocks_kHz.gpu >= 1000)
+    {
+      OSD_G_PRINTF " %#4u MHz",
+            gpu_stats->gpus [i].clocks_kHz.gpu / 1000UL
+      OSD_END
+    }
 
     if (gpu_stats->gpus [i].volts_mV.supported)
     {
       // Over (or under) voltage limit!
       if (false)//gpu_stats->gpus [i].volts_mV.over)
       {
-        OSD_G_PRINTF ", %#6.1fmV (%+#6.1fmV)",
-          gpu_stats->gpus [i].volts_mV.core, gpu_stats->gpus [i].volts_mV.ov
+        OSD_G_PRINTF ", %#4.3fV (%+#4.3fV)",
+          gpu_stats->gpus [i].volts_mV.core / 1000.0, gpu_stats->gpus [i].volts_mV.ov / 1000.0
         OSD_END
       }
 
       else
       {
-        OSD_G_PRINTF ", %#6.1fmV",
-          gpu_stats->gpus [i].volts_mV.core
+        OSD_G_PRINTF ", %#4.3fV",
+          gpu_stats->gpus [i].volts_mV.core / 1000.0
         OSD_END
       }
     }
@@ -1042,11 +1048,11 @@ if (gpu_stats != nullptr)
         OSD_G_PRINTF "  VRAM%i  : %#5llu MiB (%#3u%%: %#5.01lf GiB/s)",
           i,
                                dxgi_mem_info [buffer].local    [i].CurrentUsage            >>   20ULL,
-                                               gpu_stats->gpus [i].loads_percent.fb,
+                                               gpu_stats->gpus [i].loads_percent.fb / 1000,
 static_cast <double> ( static_cast <uint64_t> (gpu_stats->gpus [i].clocks_kHz.ram) * 2ULL   * 1000ULL  *
                        static_cast <uint64_t> (gpu_stats->gpus [i].hwinfo.mem_bus_width) )  /     8.0  /
                                                                            (1024.0 * 1024.0 * 1024.0) *
-static_cast <double> (                         gpu_stats->gpus [i].loads_percent.fb      )  /   100.0
+static_cast <double> (                         gpu_stats->gpus [i].loads_percent.fb / 1000) /   100.0
         OSD_END
       }
 
@@ -1095,9 +1101,9 @@ static_cast <double> (                         gpu_stats->gpus [i].loads_percent
         OSD_G_PRINTF "  SHARE%i : %#5llu MiB (%#3u%%: %#5.02lf GiB/s), PCIe %i.0x%u\n",
           i,
       dxgi_mem_info [buffer].nonlocal [i].CurrentUsage               >>  20ULL,
-                       gpu_stats->gpus [i].loads_percent.bus,
+                       gpu_stats->gpus [i].loads_percent.bus / 1000,
                        gpu_stats->gpus [i].hwinfo.pcie_bandwidth_mb () / 1024.0 *
- static_cast <double> (gpu_stats->gpus [i].loads_percent.bus)          /  100.0,
+ static_cast <double> (gpu_stats->gpus [i].loads_percent.bus / 1000)   /  100.0,
                        pcie_gen,
                        gpu_stats->gpus [i].hwinfo.pcie_lanes
                        //gpu_stats->gpus [i].hwinfo.pcie_transfer_rate
@@ -1139,11 +1145,11 @@ static_cast <double> (                         gpu_stats->gpus [i].loads_percent
         OSD_G_PRINTF "  VRAM%i  : %#5llu MiB (%#3u%%: %#5.01lf GiB/s)",
           i,
      dxgi_mem_info [buffer].local     [i].CurrentUsage >> 20ULL,
-                      gpu_stats->gpus [i].loads_percent.fb,
+                      gpu_stats->gpus [i].loads_percent.fb / 1000,
 static_cast <double> ( static_cast <uint64_t> (gpu_stats->gpus [i].clocks_kHz.ram) * 2ULL   * 1000ULL  *
                        static_cast <uint64_t> (gpu_stats->gpus [i].hwinfo.mem_bus_width) )  /     8.0  /
                                                                             (1024.0 * 1024.0 * 1024.0) *
-static_cast <double> (                         gpu_stats->gpus [i].loads_percent.fb      )  /   100.0
+static_cast <double> (                         gpu_stats->gpus [i].loads_percent.fb /1000)  /   100.0
         OSD_END
       }
 
@@ -1174,9 +1180,9 @@ static_cast <double> (                         gpu_stats->gpus [i].loads_percent
         OSD_G_PRINTF "  SHARE%i : %#5llu MiB (%#3u%%: %#5.02lf GiB/s), PCIe %i.0x%u\n",
           i,
                        gpu_stats->gpus [i].memory_B.nonlocal          >> 20ULL,
-                       gpu_stats->gpus [i].loads_percent.bus,
+                       gpu_stats->gpus [i].loads_percent.bus / 1000,
                        gpu_stats->gpus [i].hwinfo.pcie_bandwidth_mb () / 1024.0 *
- static_cast <double> (gpu_stats->gpus [i].loads_percent.bus)          / 100.0,
+ static_cast <double> (gpu_stats->gpus [i].loads_percent.bus / 1000)   / 100.0,
                        pcie_gen,
                        gpu_stats->gpus [i].hwinfo.pcie_lanes
                        //gpu_stats->gpus [i].hwinfo.pcie_transfer_rate
@@ -1262,10 +1268,10 @@ static_cast <double> (                         gpu_stats->gpus [i].loads_percent
 
     OSD_C_PRINTF "\n  Total  : %#3li%%  -  (Kernel: %#3li%%   "
                    "User: %#3li%%   Interrupt: %#3li%%)\n",
-        ReadNoFence (      &cpus [64].percent_load     ),
-          ReadNoFence (    &cpus [64].percent_kernel   ),
-            ReadNoFence (  &cpus [64].percent_user     ),
-              ReadNoFence (&cpus [64].percent_interrupt)
+        static_cast <long> (      cpus [64].getPercentLoad      ()),
+          static_cast <long> (    cpus [64].getPercentKernel    ()),
+            static_cast <long> (  cpus [64].getPercentUser      ()),
+              static_cast <long> (cpus [64].getPercentInterrupt ())
     OSD_END
 
     static const int digits = (num_cpus / 11 > 0 ? 2 : 1);
@@ -1277,10 +1283,10 @@ static_cast <double> (                         gpu_stats->gpus [i].loads_percent
         OSD_C_PRINTF "  CPU%0*lu%-*s: %#3li%%  -  (Kernel: %#3li%%   "
                      "User: %#3li%%   Interrupt: %#3li%%)\n",
           digits, i, 4-digits, "",
-            ReadAcquire (      &cpus [i].percent_load     ),
-              ReadAcquire (    &cpus [i].percent_kernel   ),
-                ReadAcquire (  &cpus [i].percent_user     ),
-                  ReadAcquire (&cpus [i].percent_interrupt)
+            static_cast <long> (      cpus [i].getPercentLoad      ()),
+              static_cast <long> (    cpus [i].getPercentKernel    ()),
+                static_cast <long> (  cpus [i].getPercentUser      ()),
+                  static_cast <long> (cpus [i].getPercentInterrupt ())
         OSD_END
       }
 
@@ -1288,7 +1294,7 @@ static_cast <double> (                         gpu_stats->gpus [i].loads_percent
       {
         OSD_C_PRINTF "  CPU%0*lu%-*s: %#3li%%\n",
           digits, i, 4-digits, "",
-            ReadAcquire (&cpus [i].percent_load)
+            static_cast <long> (cpus [i].getPercentLoad ())
         OSD_END
       }
     }

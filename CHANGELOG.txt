@@ -1,4 +1,1361 @@
-﻿23.5.7
+﻿23.8.14
+=======
+ + Moved saturation back to applying after Perceptual Boost to fix hue shift
+ + Fixed incorrect HDR gamut overshoot visualization due to unnormalized xyY color
+
+23.8.13.3
+=========
+ + Changed Perceptual Boost back to Rec709; accidentally left in 2020 in .2
+ + Fixed potential crash in PresentMon if presentation stalls long enough and
+     pLast is nullptr
+
+23.8.13.2
+=========
+ + Added GDeflate support and usage tracking for DirectStorage titles
+
+23.8.13.1
+=========
+ + Apply saturation and gamma before Perceptual Boost
+
+     >> Default presets have been changed to 100% saturation to compensate for
+          MASSIVE loss in color gamut
+
+23.8.13
+=======
+ + Tales of Vesperia defaults to D3D11 Deferred Mode for DoF disable to work
+
+23.8.12.3
+=========
+ + Added HDR "Import" button to HDR widget and changed behavior of "Reset"
+ + Reload Global\hdr.ini whenever "Import" is used to allow manual changes
+
+23.8.12.2
+========= 
+ + Fixed various D3D11 render state tracking related features not working in
+     Tales of Vesperia and Yakuza 0
+
+23.8.12.1
+=========
+ + Minor tweak to implicit window focus on foreground status
+ + Fixed Perceptual Boost not being enabled by default in HDR Profile 1
+
+23.8.12
+=======
+ + Optimized D3D11 render state tracker code for wrapped/hooked D3D11 device
+     interfaces.
+
+23.8.11.3
+=========
+ + Optimized D3D11 HDR processing pipeline by eliminating an extra texture copy
+     when previous frame images are not needed to mitigate NaN (99% of games).
+
+23.8.11.2
+=========
+ + Fix Alt-Tab problem in Baldur's Gate 3 and any other game that ignores
+     WM_SETFOCUS when alt-tabbing back in.
+
+23.8.11.1
+=========
+ + Optimized HDR shader slightly by skipping NaN / Infinity removal on the input
+     image, and only performing it before clamping the output to Rec 2020.
+
+23.8.11
+=======
+ + Added HDR processing time (GPU execution) to HDR widget in D3D11-based modes
+ + Added new Profile 1 default values, this profile has less black crush and
+     improves UI/midtone visibility BUT the value on the luminance slider is
+       not accurate.
+       
+    >> If you want to adjust Profile 1, familiarize yourself with using the
+         tonemap visualization mode (after profiling display).
+         
+      * The luminance slider can't calculate the light output for this profile.
+
+23.8.10.1
+=========
+ + Allow games to use dxdiagn.dll at startup as default policy, the ones that
+     do (mostly Ubisoft) will take a good minute or two to start because they're
+       collecting your hardware info using dxdiag EVERY TIME you start the game.
+
+23.8.10
+=======
+ + Fixed potential crashes in newer Unity engine games that use
+     Buffered Raw Input.
+
+23.8.9.2
+========
+ + Fixed mouse input not working in control panel when Disabled to Game.
+
+23.8.9.1
+========
+ + Fixed mouse input not working in control panel in emulators like Yuzu
+
+23.8.9
+======
+ + Added keybinding to use the previously gamepad-only "hide all widgets"
+
+    * NOTE: This is actually a toggle and hidden widgets will be restored
+              by pressing the keybind a second time.
+
+ + If users has "hide all widgets" (LT+RT while control panel is open)
+     active and then uses a widget toggle keybind, "hide all widgets" will
+       now disengage to make things less confusing.
+
+23.8.8
+======
+ + Perceptual Boost is now performed in LMS color space
+ + Changed handling of NaN/Infinity in sRGB <--> Linear conversion shader
+ + Updated HDR screenshot tonemapping code to work with wide gamut colors,
+     it's not great but at least produces sensible colors now.
+
+23.8.7.4
+========
+ + Fixed Middle Gray Slider to work in unclamped color.
+
+    >> Any existing HDR profiles that used a non-zero middle gray value
+         will need to be re-calibrated.
+
+23.8.7.2
+========
+ + Cursor auto-hide works when mouse input is set to "Disabled to Game"
+ + ImGui cursor is removed from screen when other windows have focus
+
+23.8.7.1
+========
+ + Fixed potential crash in Baldur's Gate 3 due to mouse Raw Input data
+ + Fixed mouse cursor not centering on control panel when first opening it
+ + Fixed mouse anti-warp settings related to control panel state applying
+     even when control panel is not open
+ + Set default preference for anti-warp when windows cursor is visible to off
+
+23.8.7
+======
+ + Fix potential black screen issues in Yuzu using Vulkan
+ + Changed HDR Perceptual Boost to run in Rec 2020 colorspace, the final
+     image should have less aggressive red saturation.
+
+23.8.6.3
+========
+ + Improved compatibility with Vulkan/DXGI interop when the Steam overlay
+     is not disabled (D3D11 texture cache needs to be cleared if enabled)
+
+   >> It is still HIGHLY recommended that you disable the Steam overlay when
+        using Special K in Vk games, because it hooks both Vulkan and D3D11!
+
+23.8.6.2
+========
+ + Add locks back around shader cache management code to fix God of War
+
+23.8.6.1
+========
+ + Fixed rare XInput crash if game calls on XInput during initialization
+ + Raised minimum HDR light level (above pure black) to fix artifacts on
+     colors outside of Rec 709
+
+23.8.6
+======
+ + Added separate options for HDR Render Pass and HDR Compute Pass remastering,
+     use the "Experimental" tab to access the new setting.
+
+    >> Previous versions included Compute Passes under the Render Pass setting.
+       
+    Since compute shaders are the most likely cause of glitches when using HDR
+      remastering, the settings are stored separately now.
+
+23.8.4.5
+========
+ + Optimized Raw Input hooks for better performance when SK's UI is NOT
+     blocking input to the game.
+ + Added (hidden) INI option to turn off RawInput hooks:
+
+     [Input.Gamepad]
+     EnableRawInput={true|false}
+
+   * You may manually add this to INI files for debugging; discouraged
+
+23.8.4.4
+========
+ + Fixed potential crashes in SDL-based games if they read gamepad input
+     using Raw Input and "Continue Rendering" is enabled.
+ + Disabled gamepad input to SK while games are in the background unless
+     "Continue Rendering" is enabled and Gamepad Input is not set to
+       "Disabled in Background".
+
+23.8.4.3
+========
+ + Fixed potential crash when launching Elden Ring
+ + Optimized HDR processing shader slightly for NaN / Infinity color stripping
+
+23.8.4.2
+========
+ + Raised default HDR Preset 0 saturation to 98% since increased saturation
+     is less of a problem when there's left over space in the output gamut.
+
+23.8.4.1
+========
+ + Fix artifacts on colors with very small negative values at the edge
+     between Rec 709 and DCI-P3 that were turned completely black by
+       the original attempt to unclamp HDR color.
+
+23.8.4
+======
+ + Removed internal Rec 709 gamut clamp from SK's HDR color processing (scRGB).
+
+     >> Colors are now clamped to Rec 2020; anything beyond Rec 2020 cannot be
+          displayed on Windows or for that matter on actual displays :)
+
+23.8.3.7
+========
+ + Added XInput Slot Disable option to fix Baldur's Gate 3 thinking that multiple
+     controllers are connected and forcing you to restart the game.
+
+     [Input.XInput]
+     DisableSlots=1,2,3 (Comma separated from 0 to 4) - Blank: Nothing Disabled
+
+   >> BG3 suggested setting: 1,2,3 assuming you are not using local multiplayer
+
+23.8.3.6
+========
+ + Cleanup various window message pump code in SK so that only the game's
+     message pump(s) go through SK's hooked functions and not SK's own messages.
+
+23.8.3.5
+========
+ + Fixed ActivateAtStart option not working correctly when used with SK's
+     "Continue Rendering" window management feature.
+
+23.8.3.4
+========
+ + Fixed potential black screen in some multi-window applications such as VLC
+
+23.8.3.3
+========
+ + Enable PreventEnumDevices by default in Baldur's Gate 3; it does not prevent
+     Steam Input from working, only disables the part of it that hurts perf.
+ + Activate Baldur's Gate 3's window after 15 frames are drawn so that it does
+     not think the game is in the background and draw at 30 FPS constantly.
+ + Added INI option to activate a game's window when it starts (see above)
+
+     [Window.System]
+     ActivateAtStart={true|false};  Default: false
+
+23.8.3.2
+========
+ + Added INI option to keep Steam Input from murdering performance by
+     enumerating devices every frame
+
+    [Input.DInput]
+    PreventEnumDevices={true|false}
+
+   * Fixes most of Steam Input's performance issues in Baldur's Gate 3 and
+       NieR: Replicant. Sure would be nice if Valve would fix this... :-\
+
+23.8.3.1
+========
+ + Yet more fixes for Baldur's Gate 3's screwed up gamepad code, yikes!
+
+23.8.3
+======
+ + Add code to prevent dereferencing a NULL lpMsg when Baldur's Gate 3 calls
+     GetMessageW (...) on its SDL_joystick thread.
+ + Turned default HDR Saturation on Preset 0 down to 95%, since Perceptual Boost
+     massively increases saturation to begin with.
+
+    >> If the new desaturated values are not to your liking, it is suggested you
+         try the gamut expansion slider before the adjusting saturation. Gamut
+           expansion is more subtle and less "deep fried" color.
+
+23.8.2.3
+========
+ + Add support for 8-bit HDR remastering in Baldur's Gate 3 (D3D11)
+
+23.8.2.2
+========
+ + Fixed attempting to copy DXGI_FORMAT_R16_UNORM to DXGI_FORMAT_D16_UNORM using
+     BltSurfaceCopy in Baldur's Gate 3 -- formats are direct copy compatible
+
+23.8.2.1
+========
+ + Changed VRR optimized framerate formula from 95% of Refresh to:
+
+     dVRROptimalFPS =
+       dRefreshRate - (dRefreshRate * dRefreshRate) / (60.0 * 60.0) - 0.1
+
+ + Filter out Exceptions from logs if they originate in NVIDIA MessageBus.dll
+
+23.8.2
+======
+ + Restore compatibility with NVIDIA's Vulkan / DXGI interop layer, broken by
+     various code changes to try and make Streamline work :sigh:
+
+23.8.1.4
+========
+ + Partial workaround for ID3D11Resource reference count underflow in ReShade 5.9.0
+     >> Please do not use 5.9.0, SK cannot fix it and will crash eventually.
+ + Delay load comctl32.dll to reduce likelihood of SK's injected DLL becoming
+     stuck in UWP processes such as Widgets.exe
+
+23.8.1.3
+========
+ + Replaced forum link in control panel's Help menu with a Discord link
+ + Removed option to restart NVIDIA driver from Help menu; SKIF can do it now
+ + Fixed Yakuza 0 crashing at startup
+
+     >> Using Special K in Yakuza 0 requires setting Borderless mode to work,
+          game is Fullscreen by default (ugh).
+
+23.8.1.2
+========
+ + Disabled 11-bit HDR remastering in all Yakuza games because it causes crashing
+ + Added an option to disable XInput (and only XInput) devices to the current game
+
+     [Input.XInput]
+     HideAllDevices={true|false}
+
+   >> Intended use-case is games with native DualShock / DualSense + XInput that
+        break if they see both controllers at once (i.e. Nixxes games)
+
+23.8.1.1
+========
+ + Re-enabled memory management workaround code for Yakuza games, I thought by
+     now the bugs had been fixed... I was wrong
+
+23.8.1
+======
+ + Added Streamline DRM bypass for "slSecureLoadLibrary"
+ + Added option to automatically delete DLSS3 Frame Generation DLL from games
+
+     [NVIDIA.Bugs]
+     AutoDeleteDLSSG={true|false}
+
+    * Default is false; recommended is to set true in Global\master_SpecialK.ini
+
+     >> When "deleted", sl.dlss_g.dll will be renamed sl.dlss_g.dll-bak
+
+23.7.31.4
+=========
+ + Added option to bypass DLSS3 Frame Generation DLL check so that if NVIDIA
+     ever fixes their crap, users can turn it on and hopefully not crash.
+
+     [NVIDIA.Bugs]
+     AllowDLSSG={true|false}
+
+23.7.31.3
+=========
+ + More DXVK fixes, should be the final fix needed
+
+23.7.31.2
+=========
+ + Fix potential DXVK incompatibility introduced in 23.7.31.1, given that
+     DXVK exports D3D11CoreCreateDevice but has the wrong interface.
+
+    * D3D11CoreCreateDevice will be skipped if DXVK is detected.
+
+23.7.31.1
+=========
+ + Hooked D3D11CoreCreateDevice and routed all calls to D3D11CreateDevice and
+     D3D11CreateDeviceAndSwapChain through it to maximize code reuse
+ + Initialize SK's D3D11 render hooks using D3D11CoreCreateDevice because it
+     is not hooked by ReShade and this allows SK's UI and HDR image processing
+       to reliably run -after- ReShade's post-processing.
+
+    >> Some games may no longer work with ReShade loaded as a plug-in, or may
+         require changing the load order (i.e. from PlugIn to Lazy).
+
+    Traditional ReShade installs using dxgi.dll should work, however, installing
+      as d3d11.dll will not work; ReShade does not export D3D11CoreCreateDevice
+
+23.7.31
+=======
+ + Fixed potential stutter when framerate limiter uses AMD MWAITX on high-end CPUs
+
+23.7.30
+=======
+ + Special K is no longer compatible with DLSS3 Frame Generation in any way.
+
+     >> Previously, you could use DLSS3 Frame Gen with local injection provided you
+          did not use HDR (since it is incompatible with scRGB).
+
+        However, because of many Nixxes games unusual implementations, even if you
+          run games with DLSS3 turned off (or your hardware does not support it),
+            NVIDIA Streamline will still crash.
+
+     * Users will be told to remove sl.dlss_g.dll if it is detected, and there are
+         no plans to make Special K compatible with DLSS3, NVIDIA needs to fix this.
+
+ + 20C AMD Zen temperature offset now applied to ALL AMD models, not just X
+
+23.7.29.2
+=========
+ + Added 20C to various AMD Ryzen MSR thermal sensors that previously had no offset
+
+23.7.29.1
+=========
+ + More Streamline crap -- if you delete sl.dlss_g.dll (framegen), you won't have to
+     deal with Interposer warnings and global injection will be very reliable.
+ + Added default DirectStorage tuning values for Ratchet and Clank:
+
+     BulkPriority:    Normal   LooseReadPriority:      High
+     TexturePriority: Low      NxStorageIndexPriority: Realtime
+
+23.7.29
+=======
+ + Added NVIDIA Streamline warning back to codebase, since new versions of Streamline
+     are even less stable than the old ones!
+ + Users on SteamOS will not be shown Streamline warnings, since Streamline does not
+     break SteamOS (lucky!)
+
+23.7.28.3
+=========
+ + Added even more experimental DirectStorage queue priority overrides for
+     Ratchet and Clank Rift Apart. Lowering priority may help to slow streaming
+       down and reduce texture streaming hysteresis issues.
+
+23.7.28.2
+=========
+ + Changed DirectStorage detection code to make it compatible with DirectStorage
+     SDK sample applications (i.e. BulkLoadDemo)
+
+23.7.28.1
+=========
+ + Added experimental DirectStorage overrides for D3D12/DStorage games
+
+    >> All settings require a full game restart to take effect, current overrides:
+
+     * Telemetry, BypassIO, GPU Decompression
+     * File Buffering (cache disk I/O)
+
+23.7.28
+=======
+ + Changed GPU voltage units from mV to V on text OSD to save space.
+
+23.7.27
+=======
+ + Add support for AMD Ryzen Model 04h chips to SK's CPU sensor driver, these are
+     certain new laptop chips.
+
+23.7.26.2
+=========
+ + Add CreateDXGIFactory1@8 hack to workaround DXVK bug and support 32-bit versions
+     of dxgi.dll on Wine.
+     
+    This symbol is not supposed to be DLL exported, but to ensure compatibility
+      with buggy versions of Proton, SK will alias it to CreateDXGIFactory1.
+
+23.7.26.1
+=========
+ + Add hack to fix SteamInput problems on Steam Deck.
+
+     >> Using SK's control panel in SteamInput-native games will cause undefined
+          behavior on Linux, but the Steam client will be less broken.
+
+23.7.26
+=======
+ + Restore validation code lost during a refactor that ensures Proxy DLL plug-ins
+     have matching CPU architectures and will not prevent a game from launching.
+
+23.7.23
+=======
+ + Add error message if user attempts to use Special K as dxgi.dll in 32-bit games
+     on SteamOS; rename DLL to d3d11.dll or Wine will crash in an endless loop.
+
+     >> There is currently a bug in DXVK that makes this impossible because it
+          will attempt to load CreateDXGIFactory1@8 instead of CreateDXGIFactory1
+
+23.7.21
+=======
+ + Enable DXGI Budget tracking in WINE because it is implemented by DXVK now
+ + Disable WASAPI-related features in WINE because it would spam logs otherwise
+ + Change status line for Frame Pacing widget's Presentation Model to "Steam Deck"
+     instead of telling users to install Special K
+
+23.7.20
+=======
+ + If a user already has ReShade.ini in a game's directory when loading ReShade as
+     a plug-in, SK will use ReShade's default config path instead of rebasing it.
+
+23.7.18
+=======
+ + Transitioned codebase to support QPC or TSC-based timestamps for framerate
+     limiting depending on CPU capabilities (namely CPU supports invariant rdtsc?)
+ 
+     >> TSC-based code is currently disabled because it has unfinished timing
+          issues in Latent Sync mode, but should be enabled soon.
+
+ + AMD MWAITX Instructions are Enabled by Default for AMD Users
+
+     >> They are now a stored config preference, you can turn them off
+          for a marginal boost to framerate consistency, but a loss of
+            energy efficiency on Ryzen CPUs.
+
+23.7.14
+=======
+ + AMD Ryzen power-saving features are completely automated now, and simply on/off
+ + AMD Ryzen power-saving features do not require WinRing0 anymore, but it still
+     helps if you intend to monitor the impact of the option in real-time
+ + Added CPU temperature and power consumption to Framerate Limiter | Efficiency
+     section for Ryzen users w/ WinRing0 installed
+
+23.7.13.2
+=========
+ + Prevent users from forcing a waitable SwapChain in games that already use it
+ + Added Efficiency section to Framerate Limiter | Advanced
+
+23.7.13.1
+=========
+ + Added tooltips to framepacing widget's Presentation Model status line
+
+23.7.13
+=======
+ + Added experimental AMD Ryzen power saving feature to Latent Sync config,
+     settings are not saved anywhere and the feature only activatesd when
+       opening the Latent Sync config in its current experimental state.
+
+ + AutoVRR Mode turns green and unchecks itself after it activates
+     >> Users with previous config files who activated AutoVRR will not
+          see it in green until they click the checkbox one time.
+
+23.7.12.4
+========= 
+ + Added fallback if NvAPI_GPU_ClientRegisterForUtilizationSampleUpdates fails
+ + Added D3DKMT option to SK's Control Panel under Compatibility | HW Monitoring
+ + AutoVRR mode's non-Ultra Low Latency option will not turn off Reflex Boost
+     mode when it activates if a user already had Boost mode configured on
+
+23.7.12.3
+=========
+ + Add option to disable D3DKMT perfdata, since on some systems it causes driver
+     performance issues.
+
+      [Microsoft.D3DKMT]
+      DisablePerfData={true|false}
+
+        ( This may cause loss of fan speed, temperature, and voltage statistics
+            depending on hardware vendor... Intel and AMD especially )
+
+ + Only run GPU stats code for the text OSD if the text OSD is actually visible
+
+23.7.12.2
+=========
+ + Init sensor data storage for DXGI memory budget tracking if GPU monitoring is
+     not enabled. (Fixes 0 values on VRAM gauge if CPU/GPU Load% is not enabled)
+
+23.7.12.1
+=========
+ + Add system to move SK's DXGI Memory Budget Monitoring thread to a different
+     DXGI adapter if the game is running on a different adapter than expected,
+       (i.e. NVIDIA Optimus moves game from iGPU to dGPU).
+
+23.7.12
+=======
+ + Reduced D3DKMT overhead on GPU stats thread if nothing is currently
+     displaying GPU clock rate / temperature / fan speed.
+ + Added NvAPI_GPU_ClientRegisterForUtilizationSampleUpdates-based
+     method for collecting GPU utilization % data on NVIDIA GPUs.
+
+   >> This is lower-latency and higher precision than the traditional
+        NvAPI_GPU_GetDynamicPstatesInfoEx-based load %, so it is more
+          suitable for the GPU load % meter on the framepacing graph.
+
+23.7.11
+=======
+ + Optimized VRR checks; redundant NvAPI_DISP_GetMonitorCapabilities calls
+ + Removed scoped thread priority boost on framerate limiter wait, because
+     when the function returns it could cause the thread to be rescheduled
+
+23.7.10.3
+=========
+ + Added code to reset temporary display mode overrides when a game's active
+     window is destroyed to cleanup for games that use non-standard exit.
+
+23.7.10.2
+=========
+ + Rate-limit GPU stats thread to 150 ms to lower D3DKMT overhead
+
+23.7.10.1
+=========
+ + Fixed awkward HDR widget minimum size when HDR is not active
+ + Cleaned up GPU stats thread code
+
+23.7.10
+=======
+ + Reset various framepacing statistics when games create new SwapChains,
+     or more likely when NVIDIA's DXGI/Vulkan interop does (i.e. resize).
+ + Fixed long-term (1000 frame snapshot) percentile data not updating
+ + Stop showing latency statistics temporarily while average >= 1000 ms
+
+23.7.9.6
+========
+ + Fixed wrong path when using local injection w/ user-defined screenshot path
+
+23.7.9.5
+========
+ + Added User-Defined Screenshot Path; Manually edit Global\osd.ini
+
+    [Screenshot.System]
+    OverridePath=
+
+   * Path must exist, or Special K will use the default per-profile path
+
+23.7.9.4
+========
+ + Right-align current sensor readings in GPU widget
+ + Added optional disk activity meter to framepacing widget
+ + Renamed framepacing widget preference INI section in osd.ini
+ + Improved GPU load % smoothing when using Pdh instead of ADL or NvAPI
+
+23.7.9.3
+========
+ + Fixed Reflex settings not applying when new D3D11 SwapChains / Devices
+     are created (i.e. for NVIDIA's Vulkan/DXGI Layered Present).
+
+23.7.9.2
+========
+ + Fixed incorrect DLL used to hook nvapi_QueryInterface in 32-bit builds.
+
+23.7.9.1
+========
+ + Fixed potential problems if PdhGetFormattedCounterValue (...) fails between
+     GPU state polling intervals.
+
+23.7.9
+======
+ + Improved auto-sizing of all widgets
+
+23.7.8.7
+========
+ + Apply smoothing to GPU load% and temperature
+ + Increased minimum width of D3D11 pipeline stats window
+ + Enforce minimum width on GPU widget when auto-sizing
+
+23.7.8.6
+========
+ + Smooth Fan RPM updates to avoid 0.0 for a single sensor sample interval
+ + Change GPU widget to only hide fan graph when average RPM is 0, not
+     when minimum RPM is 0.
+
+23.7.8.5
+========
+ + Increased default minimum horizontal size on GPU widget (450 pixels)
+ + Fixed border on CPU/GPU load meter not sizing correctly when scrolling down
+
+23.7.8.4
+========
+ + Favor D3DKMT collected GPU temperature over ADL or NVAPI when available.
+ + Change GPU load % to include fractional percentages for data collected from
+     APIs that support it.
+
+23.7.8.3
+========
+ + On NVIDIA GPUs that no longer report voltage or fan RPM, use D3DKMT to
+     get this data.
+
+23.7.8.2
+========
+ + Add 15 frame delay before attempting to initialize Pdh counters, so they
+     have actual data.
+
+23.7.8.1
+========
+ + Add luid to Pdh counter name:
+ 
+     "\GPU Engine(*luid_0x%08X_0x%08X*engtype_3D)\Utilization Percentage"
+
+   to correctly handle GPU load% on systems with multiple GPUs.
+
+23.7.8
+======
+ + Added Pdh / D3DKMT fallback paths to collect GPU statistics if ADL or NVAPI
+     are unavailable (i.e. Intel GPUs) or not working
+
+23.7.7.4
+========
+ + Remove AMD GPU statistics from framepacing widget if user's system has a
+     broken version of ADL
+
+23.7.7.3
+========
+ + Don't show partial Reflex config options in D3D9 or on non-NVIDIA GPUs
+ + Improved framepacing widget size calculation to eliminate scrollbar
+ + Increase GPU polling frequency when framepacing widget is visible
+
+23.7.7.2
+========
+ + Poll GPU statistics while framepacing widget is visible, instead of only
+     GPU widget / text OSD.
+
+23.7.7.1
+========
+ + Fix exit notification check for number of frames drawn; broken by 23.7.7
+
+23.7.7
+======
+ + Added extra thread-safety measures to NvAPI display management functions
+ + Simulate successful inject/exit when (un)installing local DLL using the
+     compatibility menu
+
+23.7.5.2
+========
+ + CPU load % counters changed to include fractions of percents
+ + Added the ability to turn Reflex's Nothing but Boost option on in Vulkan
+ + Removed various meaningless options from the Direct3D 11 settings in Vulkan
+
+23.7.5.1
+========
+ + Fixed potential crash due to NVAPI_Disp_GetVRRInfo (...) thread (un)safety
+ + Added CPU/GPU Load% meters to Framepacing Graph, they can be turned off by
+     right-clicking the framepacing widget.
+
+23.7.5
+======
+ + Bypass ReShade 5.x's ReShade.ini file check when loading plug-ins
+ + Changed plug-in loader to set ReShade's base path for config and logs to
+     comply with SK's own conventions:
+     
+       (i.e. per-game data in SpecialK/Profiles/<game>/... if globally injected)
+
+ + Hide Reflex Latency Analysis-related stuff on DXGI/Vulkan Interop SwapChains
+ + Stop drawing HDR widget if it is turned on but HDR is not supported
+
+23.7.4.1
+========
+ + Added Minimum Available VRAM and Maximum VRAM Load% statistics to end-game
+     memory statistics in logs/dxgi_budget.log
+
+23.7.4
+======
+ + Added option to show VRAM gauge underneath framepacing widget, right-click
+     the framepacing widget to access this setting.
+ + Added command console variable Display.RefreshRate to change the refresh
+     rate of the monitor the game's window is on using keyboard macros.
+
+23.7.3.3
+========
+ + Added Auto VRR Mode default policy to its right-click menu;
+     initial default policy is enable.
+
+23.7.3.2
+========
+ + Added "Ultra Low Latency" option to Auto VRR Mode (NVIDIA only)
+
+  >> Right-click the Auto VRR Mode option in Framerate Limiter | Advanced
+
+   * This is a globally stored preference.
+
+23.7.3.1
+========
+ + Changed the IAudioClient3 instance used to set mixing latency to keep-alive,
+     rather than destroying the COM object when it goes out of scope.
+
+    * This prevents latency from periodically resetting to default.
+
+23.7.3
+======
+ + Added a lengthy technical explanation of SK's VRAM gauge to its tooltip
+ + Added msedgewebview2.exe to internal injection blacklist
+ + Renamed "Volume Management" to "Audio Management"
+ + Added Audio Latency Minimization:
+
+  >> The Audio Management section of the control panel has a new button to
+       set the game's latency to the lowest supported by your hardware driver
+         if the current latency is higher than minimum.
+
+   * This latency reduction will be applied to the game every time it starts.
+
+  You can manually enable this feature by setting:
+
+    [Sound.Mixing]
+    MinimizeLatency=true
+
+  If you want this as a global policy, add it to Global\master_SpecialK.ini
+
+23.7.2.1
+========
+ + Removed VRR activation message from auto low-latency
+ + Bypassed Hatsune Miku Project Diva hanging at shutdown when it crashes.
+
+23.7.2
+======
+ + Auto Low-Latency Mode uses Normal framerate limiter mode now
+    >> The API needed to check for VRR is NVIDIA-only, and so is Reflex.
+       As such, it's more sensible to leverage Reflex + SK's Normal Mode.
+
+23.7.1.3
+========
+ + Added option for Auto Low-Latency Mode under Framerate Limiter | Advanced
+ + Enhanced Auto Low-Latency Mode (VRR optimization) to do the following:
+
+    1. Set Framerate Limiter to 95% Refresh (if it is Off or > 95%)
+    2. Activate without opening the control panel
+    3. Enable Reflex and turn on Low Latency mode
+    4. Prevent games from using 1/2, 1/3 or 1/4 Refresh VSYNC
+
+23.7.1.2
+========
+ + Fixed missing D3D11CreateDevice (...) hook execution when D3D11 debug
+     layer is not turned on.
+
+23.7.1.1
+========
+ + Report Supported + Inactive for VRR status instead of Unsupported when VRR
+     is not engaged because the game is not in the foreground (D3D12).
+ + Fixed premature CloseHandle (...) when logging loaded DLLs
+
+23.7.1
+======
+ + Distinguish between NVCPL disabling G-Sync completely, and application
+     profiles disabling it, because some new R530 NvAPI functions do not...
+
+23.6.30
+=======
+ + Suppress warnings in Hatsune Miku Project Diva Megamix+ when it attempts
+     to create an R8_UNORM RenderTargetView of the SwapChain backbuffer.
+
+23.6.29.2
+=========
+ + Improved consistency of D3D12 G-Sync indicator vs. D3D11
+
+23.6.29.1
+=========
+ + Implemented G-Sync Status detection for D3D12, Vulkan and OpenGL
+     >> Requires working PresentMon (i.e. full install of Special K)
+ + Hide Reflex Latency Flash button if attached display doesn't support RLA
+
+23.6.29
+=======
+ + Removed restrictions on "Continue Rendering" in Fullscreen Exclusive mode
+ + Fixed haptic UI continuing to rumble sometimes after control panel is closed
+
+23.6.28.3
+=========
+ + Lowered HDR profile 0's default gamma to 0.92 to improve shadow detail
+ + Added button/titlebar to close widgets if the control panel is open
+
+23.6.28.2
+=========
+ + Poll DXGI Budget statistics once every 250 ms if the GPU widget or GPU text
+     overlay are not active.
+
+23.6.28.1
+=========
+ + Added VRAM usage gauge to the control panel for OpenGL/Vulkan/D3D11/D3D12
+ + VRAM quotas are now configurable by right-clicking the VRAM gauge
+ + VRAM quota warnings can be reset so users can try changing game settings,
+     or the quota itself and test for VRAM shortages using the new settings.
+
+23.6.28
+=======
+ + Added warning if VRAM used exceeds a configurable % of -available- VRAM
+
+     [Render.DXGI]
+     WarnIfUsedVRAMPercentExceeds= (Some % value; 95 by default)
+
+   This is also configurable in the D3D11/D3D12 section of the control panel
+
+     >> Set to 0.0 to disable the warning.
+
+23.6.27.4
+=========
+ + Fixed libScePad hooks on disconnected controllers disabling XInput
+ + Blacklisted CefSharp.BrowserSubprocess and LariLauncher (Baldur's Gate 3)
+ + Enable Vulkan Bridge in Baldur's Gate 3 by default
+ + Removed unused INI options: "Ignore RTSS Delay" and "Adaptive Sync"
+
+23.6.27.3
+=========
+ + Fixed SKIF's new signal not being set when used in local injection
+
+23.6.27.2
+=========
+ + Added support for SKIF's new signal-based Minimize on Inject feature
+
+23.6.27.1
+=========
+ + Fixed SkipRedundantModeChanges=false always skipping SwapChain resizes (!)
+ + Added extra detection for wrapped D3D11 devices (i.e. ReShade) when checking
+     device-resource ownership during device context hooks.
+
+23.6.27
+=======
+ + Fixed black screens in D3D11 when Special K and ReShade are used together
+ + Fixed ReShade disabling HDR in D3D11 games
+
+23.6.26.3
+=========
+ + Automatically load ReShade{32|64}.dll if it is in a game's directory, and
+     create the necessary INI for version 5.x to load this way.
+
+     >> This is equivalent to manually adding it as a Lazy plug-in
+
+ + Added ReShade luminance control for its menus when used in native HDR games.
+
+     >> This fixes Rec 2020 / Rec 709 colorspace mismatches in HDR10 games and
+          80 nits brightness in scRGB games, so ReShade's UI works correctly.
+
+ + Hook ExitProcess and TerminateProcess even if debug features are turned off.
+
+23.6.26.2
+=========
+ + Merge pull request #71 from Nustat0/dgvoodoo-d3d12
+    * Enabled 32-bit D3D12 for use with dgVoodoo. 
+
+23.6.26.1
+=========
+ + Added per-game refresh setting to complement existing per-game resolution
+
+     [Display.Monitor]
+     RefreshRateForMonitor= (Current implementation rounds to nearest integer)
+
+   >> This refresh rate will be applied when a game starts, and restored when
+        the game exits. It uses the Refresh setting from the Display menu.
+
+23.6.26
+=======
+ + Re-enabled ExitProcess hook to handle games that crash at exit
+
+23.6.25
+=======
+ + Fixed Fullscreen Exclusive incompatibilities in many games
+ + Enabled Rendundant DXGI Mode Change elimination by default
+ + Enabled Fullscreen Exclusive in NieR: Automata
+
+   >> If you intend to run games in Fullscreen Exclusive (why?), be sure to
+        reset a game's INI first because the redundant mode change setting
+          has a different default value now.
+
+23.6.24.3
+=========
+ + Added warning text if a user tries to enable HDR in a Streamline game
+
+23.6.24.2
+=========
+ + Fixed potential double-shutdown of Reflex PCL thread
+ + Only apply the NoWrap hack for Streamline to Global Injection
+
+23.6.24.1
+=========
+ + Fixed compatibility with NVIDIA Streamline in D3D11/12 games by not wrapping
+     the DXGI SwapChain.
+
+    * It is assumed they are all Flip Model anyway, and do not need wrapping.
+
+     >> HDR is still hit-or-miss; DLSS3 Frame Gen is not compatible with SK HDR
+
+   (HDR users should consider replacing the Streamline Interposer DLL still...)
+
+23.6.24
+=======
+ + Optimized post-processing passes to use a single triangle
+
+23.6.23
+=======
+ + Replaced NvAPI Reflex hooks with a stub if NvAPI does not initialize
+     correctly.
+
+23.6.22
+=======
+ + Improved Reflex override restore if game initializes Reflex before SK has
+     the appropriate NvAPI functions hooked.
+
+23.6.21.2
+=========
+ + A game's native Reflex setup (i.e. Low Latency or Low Latency + Boost) is
+     restored when turning off SK's override.
+
+23.6.21.1
+=========
+ + Changed minimum number of frames before determining if a game is Reflex
+     native to 150 (because Unreal Engine).
+ + Changing the override state of Reflex without changing modes will now
+     apply immediately.
+
+23.6.21
+=======
+ + Added option to override a game's native Reflex implementation
+
+     >> Low Latency + Boost w/ Latency Marker Optimization can significantly
+          reduce latency in native Reflex games with the bare minimal Reflex
+            integration (nearly all of them).
+
+23.6.17
+=======
+ + Removed MMCSS check-box from framerate limiter advanced section
+ + Added render thread priority to framerate limiter advanced section
+
+23.6.15.2
+=========
+ + Give games 15 frames to call a Reflex API function before SK decides whether
+     to initialize its own Reflex implementation or not.
+
+23.6.15.1
+=========
+ + Enable mouse/keyboard input while Steam overlay is active, even if the
+     user is blocking mouse/keyboard to the game.
+
+23.6.15
+=======
+ + Removed Reflex Input trigger mode
+ + Removed Latent Sync "Adaptive Sync" option, the tearing option replaces it.
+ + Added support for names assigned before SK initialized to the thread widget
+
+23.6.14.3
+=========
+ + Fixed Thread Widget not showing correct names for re-named threads
+ + Changed default minimum render thread priority to Above Normal (1)
+
+     >> This used to be the default behavior in SK before it was configurable
+
+23.6.14.2
+=========
+ + Allow user-requested Reflex flashes even in Reflex-native games
+ + Handle PCL ping before Reflex simulation start marker
+
+23.6.14.1
+=========
+ + Added minimum render thread priority:
+
+    [Scheduler.Boost]
+    MinimumRenderThreadPriority { -15=Idle, 0=Normal, 15=Time Critical }
+
+ + Shutdown internal PCL Stats thread if native Reflex is detected
+
+23.6.14
+=======
+ + Reworded Adaptive Sync option in Latent Sync control panel
+ + Added "Enable Tearing" checkbox to Latent Sync control panel
+
+23.6.13.3
+=========
+ + Added Reflex Flash trigger button
+ + Added NvAPI PCL Init/Shutdown to logs
+
+23.6.13.2
+=========
+ + Replaced deprecated NvAPI calls w/ new ones (only available in Windows 10+)
+    >> Hopefully you have upgraded to 10, because NVIDIA does not support 8 :)
+
+23.6.13.1
+=========
+ + Fixed not being able to disable SK's Reflex in games that aren't native Reflex
+
+23.6.13
+=======
+ + Added detection for games that are natively using Reflex, so users cannot
+     enable SK's implementation of Reflex at the same time.
+ + Added PCL (PC Latency) ping event every 100 ms to enable PC latency readings
+     on the GeForce Experience overlay.
+ + Updated NvAPI to R525
+
+23.6.12.3
+=========
+ + Added keybinds to Volume Management section of SK's control panel.
+ + Fixed Allow Tearing not respecting system default value.
+
+23.6.12.2
+=========
+ + Fixed mouse activation of game window not working when blocking Mouse Input.
+
+23.6.12.1
+=========
+ + Added command console variables for sound volume/mute (applies only to game)
+
+     Sound.Volume [0.0-100.0]
+     Sound.Mute   {true|false}
+
+    Intended use is keyboard macros (i.e. Ctrl+Shift+Insert=Sound.Volume ++)
+
+23.6.12
+=======
+ + Changing Latent Sync on/off will restore original limiter mode preference
+
+23.6.11.3
+=========
+ + Removed auto-low latency mode
+
+23.6.11.2
+=========
+ + Fixed Latent Sync's Delay Bias setting applying to other limiter modes.
+ + Fixed MPO warning showing up even if user did not have it enabled.
+
+23.6.11.1
+=========
+ + Multiplane Overlay support in-game only counts RGB planes now.
+ + Added INI option to warn if MPO support is broken.
+
+     [Display.Monitor]
+     WarnIfNoOverlayPlanes={true|false} (default: false)
+
+    * If you want this feature, you should set it in master_SpecialK.ini
+
+23.6.11
+=======
+ + The "Enable Tearing" SwapChain flag now controls the game's use of tearing
+     as well...
+
+    >> It will turn a game's VSYNC off setting into vendor-independent FastSync.
+
+    This also allows for a gimped form of Latent Sync:
+
+     * 1 frame higher latency with "Enable Tearing" disabled, but... NO tearing :)
+
+23.6.10
+=======
+ + Special K's HDR is disabled at application start in Diablo IV because it
+     would freeze up at the game's splash screen otherwise.
+
+ + Added console variable to enable SK's HDR:
+
+     HDR.Enable {true|false}
+
+       (This performs the same action as clicking scRGB on the HDR widget)
+
+     You can assign a keybind to turn HDR on/off like so (add to SK's INI):
+
+       [Macro.HDR]
+       Ctrl+Shift+H=HDR.Enable toggle
+
+     Keep in mind, in most games after doing this you need to press Alt+Enter
+
+23.6.9.2
+========
+ + Stop logging IDXGIFactory::EnumAdapters1 (...) if a game spams it every frame
+
+23.6.9.1
+========
+ + Fixed bug where forced 10-bpc would be enabled for games with vulkan-1.dll
+     loaded, but Vulkan Bridge disabled.
+
+23.6.9
+======
+ + If user has a 1 second global injection delay configured, Streamline warning
+     will now be disabled without requiring interposer replacement.
+
+     >> SK's HDR is not compatible with Streamline, but for non-HDR users this
+          could be an acceptable compromise.
+
+23.6.7
+======
+ + Disable D3D9 hooking in Call of Duty to make it use OpenGL-IK
+ + Handle edge-case preventing OpenGL Fullscreen Exclusive bypass if the game
+     called ChangeDisplaySettingsExA instead of ChangeDisplaySettingsExW
+
+23.6.5
+======
+ + Removed warning when games try to use OpenGL Fullscreen Exclusive; SK can
+     now completely bypass it with OpenGL-IK.
+
+ + Implemented SK_D3D11_CopySubresourceRegion helper for HDR <--> SDR copies
+     when the subresource region requires scissor/clipping.
+
+       (Gets rid of a rare assertion in HDR games)
+
+23.6.4
+======
+ + Add tooltips explaining to set a game to its Windowed mode (not Borderless)
+     if using SK's Borderless / Borderless Fullscreen overrides.
+ + Fixed wrong Epic Game Store application name detection for games with DLC
+
+23.6.3.2
+========
+ + Return SCE_ERROR_BUSY instead of SCE_ERROR_OK when filtering libScePad input
+
+23.6.3.1
+========
+ + Fixed Steam Input breaking gamepad input in non-Steam games when
+     opening SK's control panel.
+
+23.6.3
+======
+ + Fix potentially incorrect SwapChain buffer resize redundancy check
+
+23.6.2.2
+========
+ + Add warning message when launching Diablo IV
+
+23.6.2.1
+========
+ + Prevent Bethesda games from turning off legacy input APIs during
+     RawInput device registration (fixes Fallout New Vegas issues)
+ + Enable Vulkan Bridge in No Man's Sky by default
+
+23.6.2
+======
+ + Removed "regular" Font Awesome Icons in favor of solid
+ + Added a splash of color to the Plug-In file selector dialog
+
+23.6.1
+======
+ + Eliminate overly aggressive framepacing defaults in NieR: Automata
+
+23.5.31
+=======
+ + Improved automatic detection of WINE to disable low-level Windows-specific
+     features of SK that have no purpose on other platforms and crash WINE.
+
+23.5.30.2
+=========
+ + Disable hook caching in Yuzu so HDR works in Vulkan
+
+23.5.30.1
+=========
+ + Revert SetForegroundWindow / BringWindowToTop changes from 23.5.28.3
+ + Updated internal fonts to Font Awesome Free v6.2.1
+
+23.5.30
+=======
+ + Merge pull request #64 from WallSoGB/SilentCrashHandler
+    * Silent crash handler + Y-m-d for crash timestamps
+
+ + Fixed hook address caching not respecting Enable{Local|Global}Cache setting
+ + Removed Unicode formatting direction characters from locale timestamps
+
+23.5.29.2
+=========
+ + Fixed deadlock in games that raise Thread Name exceptions without a string
+ + Fixed HDR gamut expansion not applying
+
+23.5.29
+=======
+ + Fixed incorrect structure size on NV_GPU_DITHER_CONTROL_V1, which was
+     causing the dithering setting on NVIDIA GPUs to read as "Default".
+
+     >> HDR users should test the dithering setting using the HDR widget's
+          HDR Visualization: "Tonemap Curve and Grayscale".
+
+        ( 10-bit Temporal is ideal for HDR on 12-bpc displays )
+
+ + Increased HDR visualization list size so Grayscale shows without scrolling
+
+23.5.28.3
+=========
+ + Various fixes for games with splash screens that are Win32 dialogs
+
+23.5.28.2
+=========
+ + Steam Overlay's Vulkan layer cannot be disabled -- its D3D11 Overlay will
+     not cleanup resources correctly on NVIDIA's DXGI Layer and will deadlock.
+
+23.5.28.1
+=========
+ + Replaced AsyncInit workaround with Env. Variables to disable Vk layers
+
+23.5.28
+=======
+ + Improved global injection compatibility with Yuzu
+ + Disabled AsyncInit for games using Vulkan Bridge to ensure that third-party
+     layer disablement code works as intended
+
+23.5.27.3
+=========
+ + Automatically disable OBS's Vulkan layer if SK's Vulkan Bridge is active
+ + Automatically disable Steam's Vulkan layer if SK's Vulkan Bridge is active
+ + Automatically disable RTSS's Vulkan layer if SK's Vulkan Bridge is active
+
+23.5.27.2
+=========
+ + Add 5 frame delay before centering mouse cursor over exit confirmation
+ + Add error when launching Yuzu without SK's injection service running
+
+23.5.27
+=======
+ + Auto-close Audio Session Selector pop-up if there are no sessions
+ + Increased the minimum size of the Audio Session Selector pop-up in
+     the Volume Management section of the control panel for low-res users
+
+23.5.26.1
+=========
+ + Add support for ++ and -- to floating-point cvars
+
+23.5.26
+=======
+ + Add "Num Plus" (for Numberpad +) as a possible keybinding
+ + All D3D9 games running in DXVK will be forced into windowed mode
+ + FFXIV is forced into windowed mode by default
+
+23.5.24
+=======
+ + NOP all calls to ChangeDisplaySettings{Ex}(A|W) when forcing windowed mode
+
+23.5.19
+=======
+ + Add check for PresentMon user permissions before attempting to enable
+
+23.5.18
+=======
+ + For NVIDIA GPU users, if DXVK (D3D9) is detected, a prompt to enable native
+     Vulkan support will be presented when first launching a game.
+
+23.5.17.6
+=========
+ + Fixed potential deadlock in Yuzu at start during Streamline Interposer check
+
+23.5.17.5
+=========
+              -[ Vulkan no longer sucks on Windows! ]-
+
+ VulkanBridge grants high-performance Borderless Window mode (w/ G-SYNC),
+   HDR, Latent Sync, Multiplane Overlays, etc. to NVIDIA GPU owners.
+
+  (*) All of those features are normally D3D exclusive.
+
+                                  (NVIDIA Driver Version 526.98+ Required)
+
+ + Enabled VulkanBridge by default in cemu and RPCS3
+
+23.5.17.4
+=========
+ + Enable VulkanBridge by default in Ryujinx and Yuzu
+ + RunDLL_NvAPI_SetDWORD will create new NV driver profiles if necessary
+ + Workaround SteamAPI crash if DLL is too old to implement ISteamScreenshots
+ + Renamed EnableRTXRemix setting to EnableVulkanBridge
+           --------------            ------------------
+ + Eliminate an unnecessary extra game restart when first enabling RTX Remix
+ + Fixed parsing executable names with spaces in RunDLL_NvAPI_SetDWORD
+
+23.5.17
+=======
+ + Added INI option to enable DXVK + DXGI Layered Present (RTX Remix)
+ 
+     [NVIDIA.API]
+     EnableRTXRemix :: 0=Disable, 1=Enable, -1=Don't Care
+
+    * The game will restart itself to apply these changes.
+
+ + Added RunDLL_NvAPI_SetDWORD to apply NVIDIA Profile Settings:
+
+     Example:  (Setup RTX Remix for Dragon's Dogma (ddda.exe))
+
+                                                     
+       rundll32 SpecialK64.dll,RunDLL_NvAPI_SetDWORD 0x20324987 0x80001 ddda.exe
+                                                     {Setting}  {Value} {EXE}
+
+     NOTE: Some settings (i.e. the one above) require Admin privileges to set.
+
+23.5.16.3
+=========
+ + Prevent NV's Vulkan/DXGI Layered SwapChain from loading Ansel
+ + Disable HDR widget if 10-bpc SDR is active
+ + Promote NV's Vulkan/DXGI Layered SwapChain to 10-bpc in SDR
+ + Disabled assertion if game window changes, unless log level >= 1
+
+23.5.16
+=======
+ + Fixed NV Vulkan/DXGI SwapChain cleanup that could cause games to freeze
+ + Renamed "Maximum Frame Interval" to "Minimum Refresh" in Reflex widget
+
+23.5.13.1
+=========
+ + Add extra Wallpaper Engine executables to blacklist
+ + Disable OpenGL Scissor Test during glBlitFramebuffer for OpenGL-IK
+
+23.5.8
+======
+ + Changed the "Prevent Always-On-Top" option to check the state once per-frame
+     and remove a game window's Always-On-Top state if needed.
+
+       (The old behavior only did this following window (de)activation).
+
+23.5.7
 ======
  + Merge pull request #63 from Aemony/D3D9-IK
     * Restores Windows 7 compatibility (just don't ask for support)
@@ -14,7 +1371,7 @@
  + Disable SK's internal debugger in Honkai: Star Rail to workaround anti-cheat
  + Added compat hacks to non-Steam version of Path of Exile as well
  + Export/Reset Profiles in HDR widget also store their INI values as
-     described in 23.5.6
+     described in 23.5.6'
 
 23.5.6
 ======
@@ -167,6 +1524,7 @@
 
 23.4.10
 =======
+ + Merge pull request #71 from Nustat0/D3D12 x32 #71
  + Merge pull request #58 from Nustat0/D3D9-IK
     * Fix dgVoodoo plugin detection for local ddraw/d3d8
  + Merge pull request #52 from cathyjf/fix-get-file-size-for-symlinks

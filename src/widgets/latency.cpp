@@ -36,6 +36,9 @@ SK_ImGui_DrawGraph_Latency ()
   static auto& rb =
     SK_GetCurrentRenderBackend ();
 
+  if (! rb.isReflexSupported ())
+    return;
+
   ImGui::BeginGroup ();
 
   NV_LATENCY_RESULT_PARAMS
@@ -194,9 +197,11 @@ SK_ImGui_DrawGraph_Latency ()
       ImColor (1.f, 1.f, 1.f), "Input Age"
     );
     }
-    ImGui::EndGroup   ();
-    ImGui::SameLine   (0.0f, 10.0f);
-    ImGui::BeginGroup ();
+    ImGui::EndGroup          ();
+    ImGui::SameLine          ();
+    ImGui::VerticalSeparator ();
+    ImGui::SameLine          (0.0f, 10.0f);
+    ImGui::BeginGroup        ();
     ////for (auto* pStage : stages)
     ////{
     ////  ImGui::TextColored (
@@ -266,6 +271,9 @@ SK_ImGui_DrawGraph_Latency ()
         ImGui::GetTextLineHeightWithSpacing () / 2.0f;
     }
     ImGui::EndGroup   ();
+
+    ImGui::SameLine          ();
+    ImGui::VerticalSeparator ();
   }
 
   ImGui::SameLine   (0, 10.0f);
@@ -404,18 +412,24 @@ SK_ImGui_DrawConfig_Latency ()
   static auto& rb =
     SK_GetCurrentRenderBackend ();
 
+  bool bFullReflexSupport =
+    rb.isReflexSupported ();
+
+  if (! (sk::NVAPI::nv_hardware && SK_API_IsDXGIBased (rb.api)))
+    return;
+
   ImGui::BeginGroup ();
 
   int reflex_mode = 0;
 
-  if (config.nvidia.sleep.enable)
+  if (config.nvidia.reflex.enable)
   {
-    if (       config.nvidia.sleep.low_latency_boost)
-    { if (     config.nvidia.sleep.low_latency)
+    if (       config.nvidia.reflex.low_latency_boost)
+    { if (     config.nvidia.reflex.low_latency)
       reflex_mode = 2;
       else
       reflex_mode = 3;
-    } else if (config.nvidia.sleep.low_latency) {
+    } else if (config.nvidia.reflex.low_latency) {
       reflex_mode = 1;
     } else {
       reflex_mode = 0;
@@ -426,77 +440,127 @@ SK_ImGui_DrawConfig_Latency ()
     reflex_mode = 0;
   }
 
-  if ( ImGui::Combo ( "NVIDIA Reflex Mode", &reflex_mode,
-                         "Off\0Low Latency\0"
-                              "Low Latency + Boost\0"
-                              "Nothing But Boost\0\0" )
-     )
+  bool show_mode_select = true;
+
+  if (config.nvidia.reflex.native)
   {
-    switch (reflex_mode)
-    {
-      case 0:
-        config.nvidia.sleep.enable            = false;
-        config.nvidia.sleep.low_latency       = false;
-        config.nvidia.sleep.low_latency_boost = false;
-        break;
+    ImGui::Bullet   ();
+    ImGui::SameLine ();
+    ImGui::TextColored ( ImColor::HSV (0.1f, 1.f, 1.f),
+                           "Game is using native Reflex, data shown here may not update every frame." );
 
-      case 1:
-        config.nvidia.sleep.enable            = true;
-        config.nvidia.sleep.low_latency       = true;
-        config.nvidia.sleep.low_latency_boost = false;
-        break;
-
-      case 2:
-        config.nvidia.sleep.enable            = true;
-        config.nvidia.sleep.low_latency       = true;
-        config.nvidia.sleep.low_latency_boost = true;
-        break;
-
-      case 3:
-        config.nvidia.sleep.enable            =  true;
-        config.nvidia.sleep.low_latency       = false;
-        config.nvidia.sleep.low_latency_boost =  true;
-        break;
-    }
-
-    rb.driverSleepNV (config.nvidia.sleep.enforcement_site);
-  }
-
-  if (ImGui::IsItemHovered ()) {
-    ImGui::SetTooltip ("NOTE: Reflex has greatest impact on G-Sync users -- it may lower peak framerate to minimize latency.");
-  }
-
-  if (config.nvidia.sleep.enable && config.nvidia.sleep.low_latency)
-  {
-    ImGui::Combo ( "NVIDIA Reflex Trigger Point", &config.nvidia.sleep.enforcement_site,
-                     "End-of-Frame\0Start-of-Frame\0Input Hook\0\0" );
+    ImGui::Checkbox ( "Override Game's Reflex Mode",
+                        &config.nvidia.reflex.override );
 
     if (ImGui::IsItemHovered ())
     {
-      ImGui::SetTooltip ("Input Polling Reflex Triggers are Experimental; only supports gamepad input currently");
+      ImGui::BeginTooltip    ();
+      ImGui::TextUnformatted ("This may allow you to reduce latency even more in native Reflex games");
+      ImGui::Separator       ();
+      ImGui::BulletText      ("Minimum Latency: Low Latency + Boost w/ Latency Marker Trained Optimization");
+      ImGui::EndTooltip      ();
     }
 
+    show_mode_select = config.nvidia.reflex.override;
+  }
+
+  if (show_mode_select)
+  {
+    // We can actually use "Nothing But Boost" in
+    //   situations where Reflex doesn't normally work
+    //     such as DXGI/Vulkan Interop SwapChains.
+    if (! bFullReflexSupport) reflex_mode =
+                              reflex_mode == 0 ? 0
+                                               : 1;
+
+    bool selected =
+      rb.isReflexSupported () ?
+        ImGui::Combo ( "NVIDIA Reflex Mode", &reflex_mode,
+                          "Off\0Low Latency\0"
+                               "Low Latency + Boost\0"
+                                 "Nothing But Boost\0\0" )
+                              :
+        ImGui::Combo ( "NVIDIA Reflex Mode", &reflex_mode,
+                          "Off\0Nothing But Boost\0\0" );
+
+    if (selected)
+    {
+      // We can actually use "Nothing But Boost" in
+      //   situations where Reflex doesn't normally work
+      //     such as DXGI/Vulkan Interop SwapChains.
+      if (! bFullReflexSupport) reflex_mode =
+                                reflex_mode == 0 ? 0
+                                                 : 2;
+
+      switch (reflex_mode)
+      {
+        case 0:
+          config.nvidia.reflex.enable            = false;
+          config.nvidia.reflex.low_latency       = false;
+          config.nvidia.reflex.low_latency_boost = false;
+          break;
+
+        case 1:
+          config.nvidia.reflex.enable            = true;
+          config.nvidia.reflex.low_latency       = true;
+          config.nvidia.reflex.low_latency_boost = false;
+          break;
+
+        case 2:
+          config.nvidia.reflex.enable            = true;
+          config.nvidia.reflex.low_latency       = true;
+          config.nvidia.reflex.low_latency_boost = true;
+          break;
+
+        case 3:
+          config.nvidia.reflex.enable            =  true;
+          config.nvidia.reflex.low_latency       = false;
+          config.nvidia.reflex.low_latency_boost =  true;
+          break;
+      }
+
+      rb.driverSleepNV (config.nvidia.reflex.enforcement_site);
+    }
+
+    if (ImGui::IsItemHovered ())
+      ImGui::SetTooltip ("NOTE: Reflex has greatest impact on G-Sync users -- it may lower peak framerate to minimize latency.");
+  }
+
+  if (config.nvidia.reflex.enable && config.nvidia.reflex.low_latency && (! config.nvidia.reflex.native) && bFullReflexSupport)
+  {
+    config.nvidia.reflex.enforcement_site =
+      std::clamp (config.nvidia.reflex.enforcement_site, 0, 1);
+
+    ImGui::Combo ( "NVIDIA Reflex Trigger Point", &config.nvidia.reflex.enforcement_site,
+                     "End-of-Frame\0Start-of-Frame\0" );
+
   //bool unlimited =
-  //  config.nvidia.sleep.frame_interval_us == 0;
+  //  config.nvidia.reflex.frame_interval_us == 0;
   //
   //if (ImGui::Checkbox ("Use Unlimited Reflex FPS", &unlimited))
   //{
   //  extern float __target_fps;
   //
-  //  if (unlimited) config.nvidia.sleep.frame_interval_us = 0;
-  //  else           config.nvidia.sleep.frame_interval_us =
+  //  if (unlimited) config.nvidia.reflex.frame_interval_us = 0;
+  //  else           config.nvidia.reflex.frame_interval_us =
   //           static_cast <UINT> ((1000.0 / __target_fps) * 1000.0);
   //}
-
-    ImGui::Checkbox ("Use Latency Marker Trained Optimization", &config.nvidia.sleep.marker_optimization);
+  }
+  
+  if ( config.nvidia.reflex.enable            &&
+       config.nvidia.reflex.low_latency_boost && ((! config.nvidia.reflex.native) || config.nvidia.reflex.override)
+                                              && rb.isReflexSupported () )
+  {
+    ImGui::Checkbox ("Use Latency Marker Trained Optimization", &config.nvidia.reflex.marker_optimization);
   }
   ImGui::EndGroup   ();
+  ImGui::Separator  ();
 }
 
 class SKWG_Latency : public SK_Widget
 {
 public:
-  SKWG_Latency () noexcept : SK_Widget ("Latency")
+  SKWG_Latency () noexcept : SK_Widget ("Latency Analysis")
   {
     SK_ImGui_Widgets->latency = this;
 
@@ -529,6 +593,7 @@ public:
 
     if (! InterlockedCompareExchange (&init, 1, 0))
     {
+      setMinSize (ImVec2 (50.0f, 50.0f));
     }
 
     if (ImGui::GetFont () == nullptr) {
@@ -541,6 +606,10 @@ public:
     if (ImGui::GetFont () == nullptr) {
       return;
     }
+
+    // Prevent showing this widget if conditions are not met
+    if (! SK_GetCurrentRenderBackend ().isReflexSupported ())
+      setVisible (false);
 
     static const auto& io =
       ImGui::GetIO ();

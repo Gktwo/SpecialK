@@ -412,30 +412,12 @@ SK_IsTrue (const wchar_t* string)
 {
   const wchar_t* pstr = string;
 
-  if ( std::wstring (string).length () == 1 &&
-                                 *pstr == L'1' )
+  if ( wcslen (pstr) == 1 &&
+              *pstr  == L'1' )
     return true;
 
-  if (std::wstring (string).length () != 4)
-    return false;
-
-  if (towlower (*pstr) != L't')
-    return false;
-
-  pstr = CharNextW (pstr);
-
-  if (towlower (*pstr) != L'r')
-    return false;
-
-  pstr = CharNextW (pstr);
-
-  if (towlower (*pstr) != L'u')
-    return false;
-
-  pstr = CharNextW (pstr);
-
   return
-    towlower (*pstr) != L'e';
+    (! _wcsicmp (pstr, L"true"));
 }
 
 time_t
@@ -913,7 +895,7 @@ struct SK_MemScan_Params__v0
 
 
 bool
-SK_ValidatePointer (LPCVOID addr, bool silent)
+SK_ValidatePointer (LPCVOID addr, bool silent, MEMORY_BASIC_INFORMATION *pmi)
 {
   MEMORY_BASIC_INFORMATION minfo = { };
 
@@ -938,28 +920,27 @@ SK_ValidatePointer (LPCVOID addr, bool silent)
                 L" SK Debug " );
   }
 
+  if (pmi != nullptr)
+     *pmi = minfo;
+
   return (! bFail);
 }
 
 bool
 SK_IsAddressExecutable (LPCVOID addr, bool silent)
 {
-  MEMORY_BASIC_INFORMATION minfo = { };
-
-  if (VirtualQuery (addr, &minfo, sizeof (minfo)))
+  MEMORY_BASIC_INFORMATION               minfo = { };
+  if (SK_ValidatePointer (addr, silent, &minfo))
   {
-    if (SK_ValidatePointer (addr, silent))
+    static SK_MemScan_Params__v0 test_exec;
+
+    SK_RunOnce(
+      test_exec.privileges.execute = SK_MemScan_Params__v0::Allowed
+    );
+
+    if (test_exec.testPrivs (minfo))
     {
-      static SK_MemScan_Params__v0 test_exec;
-
-      SK_RunOnce(
-        test_exec.privileges.execute = SK_MemScan_Params__v0::Allowed
-      );
-
-      if (test_exec.testPrivs (minfo))
-      {
-        return true;
-      }
+      return true;
     }
   }
 
@@ -1408,67 +1389,88 @@ SK_TestImports (          HMODULE  hMod,
                                      reinterpret_cast <uintptr_t>
       (    start + pImgDir->Size )                                               );
 
-    for (   pImpDesc = start ;
-            pImpDesc < end   ;
-          ++pImpDesc )
+    static bool bValidIAT = true;
+
+    if (bValidIAT && SK_ValidatePointer (pImpDesc, true))
     {
-      __try
-      {
-        if ( pImpDesc->Characteristics == 0  )
-          break;
-
-        if ( pImpDesc->ForwarderChain != DWORD_MAX ||
-             pImpDesc->Name           == 0x0 )
-        {
-          continue;
-        }
-      }
-
-      __except (EXCEPTION_EXECUTE_HANDLER)
-      {
-        continue;
-      };
-
-
-      const auto* szImport =
-        reinterpret_cast <const char *> (
-          pImgBase + (pImpDesc++)->Name
-        );
-
-      //dll_log->Log (L"%hs", szImport);
-
-      size_t hashed_str =
-        hash_string_utf8 (szImport, true);
-
-
-      for (i = 0; i < nCount; i++)
+      for (   pImpDesc = start ;
+              pImpDesc < end   ;
+            ++pImpDesc )
       {
         __try
         {
-          if ( (! pTests [i].used)
-               && hashes [i] == hashed_str )
+          if (SK_ValidatePointer (pImpDesc, true))
           {
-            if ((! StrStrIA (szImport, "D3DPERF_BeginEvent")) &&
-                (! StrStrIA (szImport, "D3DPERF_EndEvent")))
-            {
-              pTests [i].used = true;
+            if ( pImpDesc->Characteristics == 0  )
+              break;
 
-              ++hits;
-              ++important_imports;
-            }
-
-            else
+            if ( pImpDesc->ForwarderChain != DWORD_MAX ||
+                 pImpDesc->Name           == 0x0 )
             {
-              --hits;
-              --important_imports;
+              continue;
             }
           }
-        }
-        __except (EXCEPTION_EXECUTE_HANDLER) { };
-      }
 
-      if (hits == nCount)
-        break;
+          else
+            continue;
+        }
+
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+          continue;
+        };
+
+
+        const auto* szImport =
+          reinterpret_cast <const char *> (
+            pImgBase + (pImpDesc++)->Name
+          );
+
+        //dll_log->Log (L"%hs", szImport);
+
+        size_t hashed_str =
+          hash_string_utf8 (szImport, true);
+
+
+        for (i = 0; i < nCount; i++)
+        {
+          __try
+          {
+            if ( (! pTests [i].used)
+                 && hashes [i] == hashed_str )
+            {
+              if ((! StrStrIA (szImport, "D3DPERF_BeginEvent")) &&
+                  (! StrStrIA (szImport, "D3DPERF_EndEvent")))
+              {
+                pTests [i].used = true;
+
+                ++hits;
+                ++important_imports;
+              }
+
+              else
+              {
+                --hits;
+                --important_imports;
+              }
+            }
+          }
+          __except (EXCEPTION_EXECUTE_HANDLER) { };
+        }
+
+        if (hits == nCount)
+          break;
+      }
+    }
+
+    else
+    {
+      bValidIAT = false;
+
+      SK_RunOnce (
+        SK_LOGs0 ( L"RenderBoot",
+                   L"Executable's IAT appears to have been stripped..." )
+      );
     }
   }
   __except (EXCEPTION_EXECUTE_HANDLER) { };
@@ -1497,7 +1499,7 @@ SK_TestImports (          HMODULE  hMod,
     __except (EXCEPTION_EXECUTE_HANDLER)
     {
       SK_LOGs0 ( L"RenderBoot",
-                 L"Exception Code % x Encountered Examining "
+                 L"Exception Code %x Encountered Examining "
                  L"pre-Loaded Render Import DLL (idx = [%li / %li])",
                    GetExceptionCode (), i, nCount );
       return;
@@ -1637,31 +1639,7 @@ SK_Path_wcsstr (const wchar_t* wszStr, const wchar_t* wszSubStr)
 #endif
 }
 
-
-//#define NO_SECUR32_IMPORT
-//#define NO_VERSION_IMPORT
-
-#ifndef NO_VERSION_IMPORT
 #pragma comment (lib, "version.lib")
-#endif
-
-static HMODULE hModVersion = nullptr;
-
-__forceinline
-bool
-SK_Import_VersionDLL (void)
-{
-  if (hModVersion == nullptr)
-  {
-  //if(!(hModVersion = SK_GetModuleHandle      (L"Version.dll")))
-         hModVersion = SK_LoadLibraryW (L"Version.dll");
-         // Do not use skModuleRegistry
-  }
-  //Api-ms-win-core-version-l1-1-0.dll");
-
-  return
-    ( hModVersion != nullptr );
-}
 
 BOOL
 WINAPI
@@ -1671,25 +1649,8 @@ SK_VerQueryValueW (
   _Outptr_result_buffer_ (_Inexpressible_ ("buffer can be PWSTR or DWORD*")) LPVOID* lplpBuffer,
   _Out_                                                                       PUINT  puLen )
 {
-#ifdef NO_VERSION_IMPORT
-  SK_Import_VersionDLL ();
-
-  using VerQueryValueW_pfn = BOOL (WINAPI *)(
-    _In_                                                                      LPCVOID  pBlock,
-    _In_                                                                      LPCWSTR  lpSubBlock,
-    _Outptr_result_buffer_ (_Inexpressible_ ("buffer can be PWSTR or DWORD*")) LPVOID* lplpBuffer,
-    _Out_                                                                       PUINT  puLen );
-
-  static auto imp_VerQueryValueW =
-    (VerQueryValueW_pfn)
-       SK_GetProcAddress (hModVersion, "VerQueryValueW");
-
-  return
-    imp_VerQueryValueW ( pBlock, lpSubBlock, lplpBuffer, puLen );
-#else
   return
     VerQueryValueW ( pBlock, lpSubBlock, lplpBuffer, puLen );
-#endif
 }
 
 BOOL
@@ -1700,29 +1661,9 @@ SK_GetFileVersionInfoExW (_In_                      DWORD   dwFlags,
                           _In_                      DWORD   dwLen,
                           _Out_writes_bytes_(dwLen) LPVOID  lpData)
 {
-#ifdef NO_VERSION_IMPORT
-  SK_Import_VersionDLL ();
-
-  using GetFileVersionInfoExW_pfn = BOOL (WINAPI *)(
-    _In_                      DWORD   dwFlags,
-    _In_                      LPCWSTR lpwstrFilename,
-    _Reserved_                DWORD   dwHandle,
-    _In_                      DWORD   dwLen,
-    _Out_writes_bytes_(dwLen) LPVOID  lpData
-  );
-
-  static auto imp_GetFileVersionInfoExW =
-    (GetFileVersionInfoExW_pfn)
-       SK_GetProcAddress (hModVersion, "GetFileVersionInfoExW");
-
-  return
-    imp_GetFileVersionInfoExW ( dwFlags, lpwstrFilename,
-                                dwHandle, dwLen, lpData );
-#else
   return
     GetFileVersionInfoExW ( dwFlags, lpwstrFilename,
                             dwHandle, dwLen, lpData );
-#endif
 }
 
 DWORD
@@ -1731,27 +1672,9 @@ SK_GetFileVersionInfoSizeExW ( _In_  DWORD   dwFlags,
                                _In_  LPCWSTR lpwstrFilename,
                                _Out_ LPDWORD lpdwHandle )
 {
-#ifdef NO_VERSION_IMPORT
-  SK_Import_VersionDLL ();
-
-  using GetFileVersionInfoSizeExW_pfn = DWORD (WINAPI *)(
-    _In_  DWORD   dwFlags,
-    _In_  LPCWSTR lpwstrFilename,
-    _Out_ LPDWORD lpdwHandle
-  );
-
-  static auto imp_GetFileVersionInfoSizeExW =
-    (GetFileVersionInfoSizeExW_pfn)
-       SK_GetProcAddress (hModVersion, "GetFileVersionInfoSizeExW");
-
-  return
-    imp_GetFileVersionInfoSizeExW ( dwFlags, lpwstrFilename,
-                                    lpdwHandle );
-#else
   return
     GetFileVersionInfoSizeExW ( dwFlags, lpwstrFilename,
                                 lpdwHandle );
-#endif
 }
 
 bool
@@ -1991,6 +1914,61 @@ SK_GetDLLVersionStr (const wchar_t* wszName)
     ret.append (wszFileVersion);
 
   return ret;
+}
+
+std::wstring
+__stdcall
+SK_GetDLLProductName (const wchar_t* wszDLL)
+{
+  UINT     cbTranslatedBytes = 0,
+           cbProductBytes    = 0;
+
+  uint8_t cbData [16384] = { };
+  size_t dwSize = 16383;
+
+  wchar_t* wszProductName = nullptr; // Will point somewhere in cbData
+
+  struct LANGANDCODEPAGE {
+    WORD wLanguage;
+    WORD wCodePage;
+  } *lpTranslate = nullptr;
+
+  BOOL bRet =
+    SK_GetFileVersionInfoExW ( FILE_VER_GET_NEUTRAL |
+                               FILE_VER_GET_PREFETCHED,
+                                 wszDLL,
+                                   0x00,
+                static_cast <DWORD> (dwSize),
+                                       cbData );
+
+  if (! bRet)
+    return L"N/A";
+
+  if ( SK_VerQueryValueW ( cbData,
+                             TEXT ("\\VarFileInfo\\Translation"),
+                 static_cast_p2p <void> (&lpTranslate),
+                                         &cbTranslatedBytes ) && cbTranslatedBytes &&
+                                                                 lpTranslate )
+  {
+    wchar_t        wszPropName [64] = { };
+    _snwprintf_s ( wszPropName, 63,
+                    LR"(\StringFileInfo\%04x%04x\ProductName)",
+                      lpTranslate   [0].wLanguage,
+                        lpTranslate [0].wCodePage );
+
+    SK_VerQueryValueW ( cbData,
+                          wszPropName,
+              static_cast_p2p <void> (&wszProductName),
+                                      &cbProductBytes );
+  }
+
+  if ( cbTranslatedBytes == 0 ||
+         (cbProductBytes == 0) )
+  {
+    return L"  ";
+  }
+
+  return wszProductName;
 }
 
 
@@ -3093,14 +3071,16 @@ SK_RestartGame (const wchar_t* wszDLL, const wchar_t* wszFailMsg)
                 wcsncpy_s ( wszFullname, MAX_PATH, global_dll.c_str (), _TRUNCATE );
       GetShortPathName    ( wszFullname, wszShortPath,                   MAX_PATH );
 
-      if (SK_FileHasSpaces (wszShortPath))
-      {
-        if (wszFailMsg == nullptr)
-          SK_ImGui_Warning (L"Could not restart due to missing DOS 8.3 filename support");
-        else
-          SK_ImGui_Warning (wszFailMsg);
-        return;
-      }
+      //if (SK_FileHasSpaces (wszShortPath))
+      // 
+      //{
+      //  if (wszFailMsg == nullptr)
+      //    SK_ImGui_Warning (L"Could not restart due to missing DOS 8.3 filename support");
+      //  else
+      //    SK_ImGui_Warning (wszFailMsg);
+      //  return;
+      //}
+      UNREFERENCED_PARAMETER (wszFailMsg);
     }
   }
 
@@ -3736,8 +3716,11 @@ SK_WinRing0_Install (void)
 }
 
 void
-SK_ElevateToAdmin (void)
+SK_ElevateToAdmin (const wchar_t *wszCommand)
 {
+  if (wszCommand == nullptr)
+      wszCommand = SK_GetFullyQualifiedApp ();
+
   wchar_t wszRunDLLCmd [MAX_PATH * 4] = { };
   wchar_t wszShortPath [MAX_PATH + 2] = { };
   wchar_t wszFullname  [MAX_PATH + 2] = { };
@@ -3750,22 +3733,10 @@ SK_ElevateToAdmin (void)
   if (SK_FileHasSpaces (wszFullname))
     GetShortPathName   (wszFullname, wszShortPath, MAX_PATH );
 
-  if (SK_FileHasSpaces (wszShortPath))
-  {
-    /////SK_MessageBox ( L"Your computer is misconfigured; please enable DOS 8.3 filename generation."
-    /////                L"\r\n\r\n\t"
-    /////                L"This is a common problem for non-boot drives, please ensure that the drive your "
-    /////                L"game is installed to has 8.3 filename generation enabled and then re-install "
-    /////                L"the mod.",
-    /////                  L"Cannot Elevate To Admin Because of Bad File system Policy.",
-    /////                    MB_OK | MB_SYSTEMMODAL | MB_SETFOREGROUND | MB_ICONASTERISK | MB_TOPMOST );
-    return;//ExitProcess   (0x00);
-  }
-
   swprintf_s ( wszRunDLLCmd, MAX_PATH * 4 - 1,
-               L"RunDll32.exe \"%ws\",RunDLL_ElevateMe %s",
+               L"RunDll32.exe \"%ws\",RunDLL_ElevateMe %ws",
                  wszShortPath,
-                   SK_GetFullyQualifiedApp () );
+                   wszCommand );
 
   STARTUPINFOW        sinfo = { };
   PROCESS_INFORMATION pinfo = { };
@@ -4139,32 +4110,7 @@ SK_GetUserNameExA (
   _Out_writes_to_opt_(*nSize,*nSize) LPSTR                 lpNameBuffer,
   _Inout_                            PULONG                nSize )
 {
-// Turns out this isn't a good idea, since we might need the import during DllMain
-#ifdef NO_SECUR32_IMPORT
-  using GetUserNameExA =
-    BOOLEAN (WINAPI *)(EXTENDED_NAME_FORMAT, LPSTR, PULONG);
-
-  static auto      hModSecur32 =
-    SK_LoadLibraryW (L"Secur32.dll");
-
-  if (hModSecur32 != nullptr)
-  {
-    static auto
-      _GetUserNameExA =
-      (GetUserNameExA)SK_GetProcAddress ( hModSecur32,
-      "GetUserNameExA");
-
-    if (_GetUserNameExA != nullptr)
-    {
-      return
-        _GetUserNameExA (NameFormat, lpNameBuffer, nSize);
-    }
-  }
-
-  return FALSE;
-#else
   return GetUserNameExA (NameFormat, lpNameBuffer, nSize);
-#endif
 }
 
 _Success_(return != 0)
@@ -4175,32 +4121,7 @@ SK_GetUserNameExW (
     _Out_writes_to_opt_(*nSize,*nSize) LPWSTR               lpNameBuffer,
     _Inout_                            PULONG               nSize )
 {
-// Turns out this isn't a good idea, since we might need the import during DllMain
-#ifdef NO_SECUR32_IMPORT
-  using GetUserNameExW =
-    BOOLEAN (WINAPI *)(EXTENDED_NAME_FORMAT, LPWSTR, PULONG);
-
-  static auto      hModSecur32 =
-    SK_LoadLibraryW (L"Secur32.dll");
-
-  if (hModSecur32 != nullptr)
-  {
-    static auto
-      _GetUserNameExW =
-      (GetUserNameExW)SK_GetProcAddress ( hModSecur32,
-      "GetUserNameExW");
-
-    if (_GetUserNameExW != nullptr)
-    {
-      return
-        _GetUserNameExW (NameFormat, lpNameBuffer, nSize);
-    }
-  }
-
-  return FALSE;
-#else
   return GetUserNameExW (NameFormat, lpNameBuffer, nSize);
-#endif
 }
 
 // Doesn't need to be this complicated; it's a string function, might as well optimize it.

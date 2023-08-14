@@ -499,7 +499,8 @@ NtWaitForMultipleObjects_Detour (
            WaitType, Alertable,
              TimeOut                  );
 
-  SK_MMCS_ApplyPendingTaskPriority ();
+  if (ntStatus != STATUS_TIMEOUT)
+    SK_MMCS_ApplyPendingTaskPriority ();
 
   return
     ntStatus;
@@ -744,7 +745,8 @@ NtWaitForSingleObject_Detour (
       Handle, Alertable, Timeout
     );
 
-  SK_MMCS_ApplyPendingTaskPriority ();
+  if (ret != STATUS_TIMEOUT)
+    SK_MMCS_ApplyPendingTaskPriority ();
 
   return
     ret;
@@ -757,31 +759,31 @@ WINAPI
 SwitchToThread_Detour (void)
 {
 #ifdef _M_AMD64
-  static bool is_mhw =
-    ( SK_GetCurrentGameID () == SK_GAME_ID::MonsterHunterWorld     );
-  static bool is_aco =
-    ( SK_GetCurrentGameID () == SK_GAME_ID::AssassinsCreed_Odyssey );
-    static bool is_elex2 =
-    ( SK_GetCurrentGameID () == SK_GAME_ID::Elex2 );
+  struct game_s {
+    bool is_mhw   = SK_GetCurrentGameID () == SK_GAME_ID::MonsterHunterWorld;
+    bool is_aco   = SK_GetCurrentGameID () == SK_GAME_ID::AssassinsCreed_Odyssey;
+    bool is_elex2 = SK_GetCurrentGameID () == SK_GAME_ID::Elex2;
+    bool is_generic = !(is_mhw || is_aco || is_elex2);
+  } static game;
 
-  if (! (is_mhw || is_aco || is_elex2))
+  if (game.is_generic) [[likely]]
   {
 #endif
     BOOL bRet =
       SwitchToThread_Original ();
 
-    SK_MMCS_ApplyPendingTaskPriority ();
+    if (bRet)
+      SK_MMCS_ApplyPendingTaskPriority ();
 
     return bRet;
 #ifdef _M_AMD64
   }
 
 
-
   static volatile DWORD dwAntiDebugTid = 0;
 
-  extern bool   __SK_MHW_KillAntiDebug;
-  if (is_mhw && __SK_MHW_KillAntiDebug)
+  extern bool        __SK_MHW_KillAntiDebug;
+  if (game.is_mhw && __SK_MHW_KillAntiDebug)
   {
     DWORD dwTid =
       ReadULongAcquire (&dwAntiDebugTid);
@@ -855,7 +857,7 @@ SwitchToThread_Detour (void)
 
   BOOL bRet = FALSE;
 
-  if (__SK_MHW_KillAntiDebug && is_aco)
+  if (__SK_MHW_KillAntiDebug && game.is_aco)
   {
     config.render.framerate.enable_mmcss = true;
 
@@ -910,7 +912,7 @@ SwitchToThread_Detour (void)
       SK_GetFramesDrawn ();
   }
 
-  else if (is_elex2)
+  else if (game.is_elex2)
   {
     static volatile LONG iters = 0L;
 

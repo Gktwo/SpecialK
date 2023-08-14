@@ -88,6 +88,9 @@ sk::ParameterBool*  _SK_HDR_16BitSwapChain            = nullptr;
 sk::ParameterBool*  _SK_HDR_Promote10BitRGBATo16BitFP = nullptr;
 sk::ParameterBool*  _SK_HDR_Promote11BitRGBTo16BitFP  = nullptr;
 sk::ParameterBool*  _SK_HDR_Promote8BitRGBxTo16BitFP  = nullptr;
+sk::ParameterBool*  _SK_HDR_Promote10BitUAVsTo16BitFP = nullptr;
+sk::ParameterBool*  _SK_HDR_Promote11BitUAVsTo16BitFP = nullptr;
+sk::ParameterBool*  _SK_HDR_Promote8BitUAVsTo16BitFP  = nullptr;
 sk::ParameterInt*   _SK_HDR_ActivePreset              = nullptr;
 sk::ParameterBool*  _SK_HDR_FullRange                 = nullptr;
 sk::ParameterInt*   _SK_HDR_sRGBBypassBehavior        = nullptr;
@@ -101,6 +104,12 @@ bool  __SK_HDR_16BitSwap        = false;
 SK_LazyGlobal <SK_HDR_RenderTargetManager> SK_HDR_RenderTargets_8bpc;
 SK_LazyGlobal <SK_HDR_RenderTargetManager> SK_HDR_RenderTargets_10bpc;
 SK_LazyGlobal <SK_HDR_RenderTargetManager> SK_HDR_RenderTargets_11bpc;
+
+SK_LazyGlobal <SK_HDR_RenderTargetManager> SK_HDR_UnorderedViews_8bpc;
+SK_LazyGlobal <SK_HDR_RenderTargetManager> SK_HDR_UnorderedViews_10bpc;
+SK_LazyGlobal <SK_HDR_RenderTargetManager> SK_HDR_UnorderedViews_11bpc;
+
+bool SK_HDR_PromoteUAVsTo16Bit = false;
 
 float __SK_HDR_Luma            = 80.0_Nits;
 float __SK_HDR_Exp             =  1.0f;
@@ -295,14 +304,14 @@ struct SK_HDR_Preset_s {
       store ();
     }
   }
-} static hdr_presets  [4] = { { "HDR Preset 0", 0,   80.0_Nits,  80.0_Nits, 100.0_Nits, 0.933f, 1.0f, 0.01f, { SK_HDR_TONEMAP_NONE   },            -__SK_HDR_PQBoost0, __SK_HDR_PQBoost1, __SK_HDR_PQBoost2, __SK_HDR_PQBoost3, L"Shift+F1" },
-                              { "HDR Preset 1", 1,  200.0_Nits, 100.0_Nits, 100.0_Nits,   1.0f, 1.0f, 0.01f, { SK_HDR_TONEMAP_NONE   },             __SK_HDR_PQBoost0, __SK_HDR_PQBoost1, __SK_HDR_PQBoost2, __SK_HDR_PQBoost3, L"Shift+F2" },
-                              { "scRGB Native", 2,   80.0_Nits,  80.0_Nits, 100.0_Nits,   1.0f, 1.0f, 0.01f, { SK_HDR_TONEMAP_NONE   },             __SK_HDR_PQBoost0, __SK_HDR_PQBoost1, __SK_HDR_PQBoost2, __SK_HDR_PQBoost3, L"Shift+F3" },
-                              { "HDR10 Native", 3,   80.0_Nits,  80.0_Nits, 100.0_Nits,   1.0f, 1.0f, 0.01f, { SK_HDR_TONEMAP_HDR10_PASSTHROUGH },  __SK_HDR_PQBoost0, __SK_HDR_PQBoost1, __SK_HDR_PQBoost2, __SK_HDR_PQBoost3, L"Shift+F4" } },
-         hdr_defaults [4] = { { "HDR Preset 0", 0,   80.0_Nits,  80.0_Nits, 100.0_Nits, 0.933f, 1.0f, 0.01f, { SK_HDR_TONEMAP_NONE   },            -__SK_HDR_PQBoost0, __SK_HDR_PQBoost1, __SK_HDR_PQBoost2, __SK_HDR_PQBoost3, L"Shift+F1" },
-                              { "HDR Preset 1", 1,  200.0_Nits, 100.0_Nits, 100.0_Nits,   1.0f, 1.0f, 0.01f, { SK_HDR_TONEMAP_NONE   },             __SK_HDR_PQBoost0, __SK_HDR_PQBoost1, __SK_HDR_PQBoost2, __SK_HDR_PQBoost3, L"Shift+F2" },
-                              { "scRGB Native", 2,   80.0_Nits,  80.0_Nits, 100.0_Nits,   1.0f, 1.0f, 0.01f, { SK_HDR_TONEMAP_NONE   },             __SK_HDR_PQBoost0, __SK_HDR_PQBoost1, __SK_HDR_PQBoost2, __SK_HDR_PQBoost3, L"Shift+F3" },
-                              { "HDR10 Native", 3,   80.0_Nits,  80.0_Nits, 100.0_Nits,   1.0f, 1.0f, 0.01f, { SK_HDR_TONEMAP_HDR10_PASSTHROUGH },  __SK_HDR_PQBoost0, __SK_HDR_PQBoost1, __SK_HDR_PQBoost2, __SK_HDR_PQBoost3, L"Shift+F4" } };
+} static hdr_presets  [4] = { { "HDR Preset 0", 0,   80.0_Nits,  80.0_Nits, 100.0_Nits, 0.92f, 1.0f, 0.01f,   { SK_HDR_TONEMAP_NONE   },            -__SK_HDR_PQBoost0, __SK_HDR_PQBoost1, __SK_HDR_PQBoost2, __SK_HDR_PQBoost3, L"Shift+F1" },
+                              { "HDR Preset 1", 1,   87.2_Nits,  80.0_Nits,  97.5_Nits, 0.88f, 1.0f, 0.0125f, { SK_HDR_TONEMAP_NONE   },            -__SK_HDR_PQBoost0, __SK_HDR_PQBoost1, __SK_HDR_PQBoost2, __SK_HDR_PQBoost3, L"Shift+F2" },
+                              { "scRGB Native", 2,   80.0_Nits,  80.0_Nits, 100.0_Nits,  1.0f, 1.0f, 0.01f,   { SK_HDR_TONEMAP_NONE   },             __SK_HDR_PQBoost0, __SK_HDR_PQBoost1, __SK_HDR_PQBoost2, __SK_HDR_PQBoost3, L"Shift+F3" },
+                              { "HDR10 Native", 3,   80.0_Nits,  80.0_Nits, 100.0_Nits,  1.0f, 1.0f, 0.01f,   { SK_HDR_TONEMAP_HDR10_PASSTHROUGH },  __SK_HDR_PQBoost0, __SK_HDR_PQBoost1, __SK_HDR_PQBoost2, __SK_HDR_PQBoost3, L"Shift+F4" } },
+         hdr_defaults [4] = { { "HDR Preset 0", 0,   80.0_Nits,  80.0_Nits, 100.0_Nits, 0.92f, 1.0f, 0.01f,   { SK_HDR_TONEMAP_NONE   },            -__SK_HDR_PQBoost0, __SK_HDR_PQBoost1, __SK_HDR_PQBoost2, __SK_HDR_PQBoost3, L"Shift+F1" },
+                              { "HDR Preset 1", 1,   87.2_Nits,  80.0_Nits,  97.5_Nits, 0.88f, 1.0f, 0.0125f, { SK_HDR_TONEMAP_NONE   },            -__SK_HDR_PQBoost0, __SK_HDR_PQBoost1, __SK_HDR_PQBoost2, __SK_HDR_PQBoost3, L"Shift+F2" },
+                              { "scRGB Native", 2,   80.0_Nits,  80.0_Nits, 100.0_Nits,  1.0f, 1.0f, 0.01f,   { SK_HDR_TONEMAP_NONE   },             __SK_HDR_PQBoost0, __SK_HDR_PQBoost1, __SK_HDR_PQBoost2, __SK_HDR_PQBoost3, L"Shift+F3" },
+                              { "HDR10 Native", 3,   80.0_Nits,  80.0_Nits, 100.0_Nits,  1.0f, 1.0f, 0.01f,   { SK_HDR_TONEMAP_HDR10_PASSTHROUGH },  __SK_HDR_PQBoost0, __SK_HDR_PQBoost1, __SK_HDR_PQBoost2, __SK_HDR_PQBoost3, L"Shift+F4" } };
 
 BOOL
 CALLBACK
@@ -580,7 +589,7 @@ SK_HDR_DisplayProfilerDialog (bool draw = true)
   if (bOpen)
   {
     auto pHDRWidget          =
-      ImGui::FindWindowByName ("DXGI_HDR##Widget_DXGI_HDR");
+      ImGui::FindWindowByName ("HDR Configuration##Widget_DXGI_HDR");
     auto pControlPanelWindow =
       ImGui::FindWindowByName (SK_ImGui_ControlPanelTitle ());
 
@@ -613,7 +622,7 @@ SK_HDR_DisplayProfilerDialog (bool draw = true)
     if (bLastOpen)
     { 
       auto pHDRWidget          =
-        ImGui::FindWindowByName ("DXGI_HDR##Widget_DXGI_HDR");
+        ImGui::FindWindowByName ("HDR Configuration##Widget_DXGI_HDR");
       auto pControlPanelWindow =
         ImGui::FindWindowByName (SK_ImGui_ControlPanelTitle ());
 
@@ -762,7 +771,7 @@ extern iSK_INI* osd_ini;
 class SKWG_HDR_Control : public SK_Widget, SK_IVariableListener
 {
 public:
-  SKWG_HDR_Control (void) : SK_Widget ("DXGI_HDR")
+  SKWG_HDR_Control (void) : SK_Widget ("HDR Configuration")
   {
     SK_ImGui_Widgets->hdr_control = this;
 
@@ -782,7 +791,9 @@ public:
       SK_IVarStub <float>* vert        = new SK_IVarStub <float> (&__SK_HDR_VertCoverage);
       SK_IVarStub <bool>*  adaptive    = new SK_IVarStub <bool>  (&__SK_HDR_AdaptiveToneMap);
       SK_IVarStub <int>*   bypass_srgb = new SK_IVarStub <int>   (&__SK_HDR_Bypass_sRGB);
+      SK_IVarStub <bool>*  enable      = new SK_IVarStub <bool>  (&__SK_HDR_16BitSwap, this);
 
+      pCommandProc->AddVariable ( "HDR.Enable",          enable                                );
       pCommandProc->AddVariable ( "HDR.Preset",          &preset->setRange      (0, 3)         );
       pCommandProc->AddVariable ( "HDR.Visualization",   &vis->setRange         (0, 11)        );
       pCommandProc->AddVariable ( "HDR.Tonemap",         &tonemap->setRange     (0, 2)         );
@@ -801,11 +812,25 @@ public:
   bool OnVarChange (SK_IVariable* var, void* val = nullptr) override
   {
     if ( val != nullptr &&
-         var != nullptr && var->getValuePointer () == &__SK_HDR_Preset )
+         var != nullptr )
     {
-      __SK_HDR_Preset = *(int *)val;
+      if ( var->getValuePointer () == &__SK_HDR_Preset )
+      {
+        __SK_HDR_Preset = *(int *)val;
 
-      hdr_presets [__SK_HDR_Preset].activate ();
+        hdr_presets [__SK_HDR_Preset].activate ();
+      }
+
+      if ( var->getValuePointer () == &__SK_HDR_16BitSwap )
+      {
+        __SK_HDR_16BitSwap = *(bool *)val;
+
+        static auto& rb =
+          SK_GetCurrentRenderBackend ();
+
+        rb.scanout.colorspace_override = __SK_HDR_16BitSwap ? DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709
+                                                            : DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709;
+      }
     }
 
     return true;
@@ -865,12 +890,15 @@ public:
                                   L"Use16BitSwapChain",  __SK_HDR_16BitSwap,
                                   L"16-bit SwapChain" );
 
+    // Must start OFF, user can turn on later.
+    if (SK_GetCurrentGameID () == SK_GAME_ID::DiabloIV)
+      __SK_HDR_16BitSwap = false;
+
 
     _SK_HDR_Promote8BitRGBxTo16BitFP =
       _CreateConfigParameterBool ( SK_HDR_SECTION,
-                                   L"Promote8BitRTsTo16",  SK_HDR_RenderTargets_8bpc->PromoteTo16Bit,
+                                   L"Promote8BitRTsTo16",   SK_HDR_RenderTargets_8bpc->PromoteTo16Bit,
                                    L"8-Bit Precision Increase" );
-
     _SK_HDR_Promote10BitRGBATo16BitFP =
       _CreateConfigParameterBool ( SK_HDR_SECTION,
                                    L"Promote10BitRTsTo16",  SK_HDR_RenderTargets_10bpc->PromoteTo16Bit,
@@ -879,6 +907,27 @@ public:
       _CreateConfigParameterBool ( SK_HDR_SECTION,
                                    L"Promote11BitRTsTo16",  SK_HDR_RenderTargets_11bpc->PromoteTo16Bit,
                                    L"11-Bit Precision Increase" );
+
+    _SK_HDR_Promote8BitUAVsTo16BitFP =
+      _CreateConfigParameterBool ( SK_HDR_SECTION,
+                                   L"Promote8BitUAVsTo16",  SK_HDR_UnorderedViews_8bpc->PromoteTo16Bit,
+                                   L"8-Bit Precision Increase (UAV)" );
+    _SK_HDR_Promote10BitUAVsTo16BitFP =
+      _CreateConfigParameterBool ( SK_HDR_SECTION,
+                                   L"Promote10BitUAVsTo16", SK_HDR_UnorderedViews_10bpc->PromoteTo16Bit,
+                                   L"10-Bit Precision Increase (UAV)" );
+    _SK_HDR_Promote11BitUAVsTo16BitFP =
+      _CreateConfigParameterBool ( SK_HDR_SECTION,
+                                   L"Promote11BitUAVsTo16", SK_HDR_UnorderedViews_11bpc->PromoteTo16Bit,
+                                   L"11-Bit Precision Increase (UAV)" );
+
+    // Games where 11-bit remastering is a known stability issue
+    //
+    if ( SK_GetCurrentGameID () == SK_GAME_ID::Yakuza0       ||
+         SK_GetCurrentGameID () == SK_GAME_ID::YakuzaKiwami  ||
+         SK_GetCurrentGameID () == SK_GAME_ID::YakuzaKiwami2 ||
+         SK_GetCurrentGameID () == SK_GAME_ID::YakuzaUnderflow )
+      SK_HDR_RenderTargets_11bpc->PromoteTo16Bit = false;
 
     _SK_HDR_FullRange =
       _CreateConfigParameterBool ( SK_HDR_SECTION,
@@ -952,29 +1001,28 @@ public:
 
     // If override is not enabled and display is not HDR capable, then do nothing.
     if ((! rb.isHDRCapable ()) && (! __SK_HDR_16BitSwap))
+    {
+      setVisible (false); // Stop showing the widget
       return;
+    }
 
     const auto& io =
       ImGui::GetIO ();
 
+    
     const ImVec2 v2Min (
-      io.DisplaySize.x / 6.0f,
-      io.DisplaySize.y / 4.0f
-    );
-
-    const ImVec2 v2Max (
-      io.DisplaySize.x / 4.0f,
-      io.DisplaySize.y / 3.0f
+      rb.isHDRActive () ? 1340.0f : 150.0f,
+      rb.isHDRActive () ?  140.0f :  50.0f
     );
 
     setMinSize (v2Min);
-    setMaxSize (v2Max);
+    setMaxSize (ImVec2 (io.DisplaySize.x, io.DisplaySize.y));
 
     static bool TenBitSwap_Original     = __SK_HDR_10BitSwap;
     static bool SixteenBitSwap_Original = __SK_HDR_16BitSwap;
 
-    static int sel = __SK_HDR_16BitSwap ? 2 :
-                     __SK_HDR_10BitSwap ? 1 : 0;
+    int sel = __SK_HDR_16BitSwap ? 2 :
+              __SK_HDR_10BitSwap ? 1 : 0;
 
     SK_HDR_DisplayProfilerDialog ();
 
@@ -1098,18 +1146,37 @@ public:
       }
     }
 
-    if (rb.isHDRCapable () && rb.isHDRActive ())
+    static bool bStreamline =
+      SK_GetModuleHandleW (L"sl.interposer.dll") != nullptr;
+
+    if (bStreamline && ImGui::IsItemHovered ())
     {
-      if (ImGui::IsItemHovered ())
+      ImGui::BeginTooltip      ( );
       {
-        ImGui::BeginTooltip ();
-        {
-          ImGui::TextUnformatted ("For best image quality, ensure your desktop is using 10-bit color");
-          ImGui::Separator ();
-          ImGui::BulletText ("Either RGB Full-Range or YCbCr-4:4:4 will work");
-          ImGui::EndTooltip ();
-        }
+        ImGui::TextColored     ( ImVec4 (1.f, 1.f, 0.0f, 1.f), "%s",
+                                   ICON_FA_EXCLAMATION_TRIANGLE " WARNING: " );
+        ImGui::SameLine        ( );
+        ImGui::TextColored     ( ImColor::HSV (.15f, .8f, .9f), "%s",
+                                   "This game uses NVIDIA Streamline, and HDR may not work!" );
+        ImGui::Separator       ( );
+        ImGui::BulletText      ( "If HDR causes the game to freeze or crash, "
+                                 "you may need to replace or delete sl.interposer.dll" );
+        ImGui::BulletText      ( "DLSS 3 Frame Generation is NOT compatible with scRGB HDR" );
+        ImGui::Separator       ( );
+        ImGui::TextUnformatted ( "See the Streamline section of Special K's Wiki for more details." );
       }
+      ImGui::EndTooltip        ( );
+    }
+
+    else if (rb.isHDRCapable () && rb.isHDRActive () && ImGui::IsItemHovered ())
+    {
+      ImGui::BeginTooltip ();
+      {
+        ImGui::TextUnformatted ("For best image quality, ensure your desktop is using 10-bit color");
+        ImGui::Separator       ();
+        ImGui::BulletText      ("Either RGB Full-Range or YCbCr-4:4:4 will work");
+      }
+      ImGui::EndTooltip ();
     }
 
     if (! rb.isHDRCapable ())
@@ -1178,13 +1245,34 @@ public:
         if (swapDesc.BufferDesc.Format == DXGI_FORMAT_R16G16B16A16_FLOAT)
         {
         //bHDRActive = true;
-          _PrintHDRModeChangeWarning ();
+          _PrintHDRModeChangeWarning (); 
         }
       }
     }
 
     if ( bHDRActive )
     {
+      if (SK_API_IsLayeredOnD3D11 (rb.api))
+      {
+        ImGui::SameLine ();
+
+        extern double SK_D3D11_HDR_RuntimeMs;
+
+        static char szProcessingText [128] = { };
+        snprintf (  szProcessingText, 127, "HDR Processing:\t%5.4f ms", SK_D3D11_HDR_RuntimeMs);
+
+        auto vTextSize =
+          ImGui::CalcTextSize (szProcessingText);
+
+        float fx = ImGui::GetCursorPosX              (),
+              fw = ImGui::GetContentRegionAvailWidth ();
+
+        ImGui::SetCursorPosX (fx - ImGui::GetStyle ().ItemInnerSpacing.x +
+                              fw -                           vTextSize.x);
+
+        ImGui::TextUnformatted (szProcessingText);
+      }
+
       SK_ComQIPtr <IDXGISwapChain4> pSwap4 (rb.swapchain);
 
       if (pSwap4 != nullptr)
@@ -1636,93 +1724,8 @@ public:
               (std::wstring (SK_GetInstallPath ()) + LR"(\Global\hdr.ini)").c_str ()
             );
 
-          //ImGui::Button     ("Save as Default"); ImGui::SameLine ();
-          //ImGui::Button     ("Load Default");    ImGui::SameLine ();
-
-          if (ImGui::Button ("Reset"))
-          {
-            auto& default_preset =
-              hdr_defaults [__SK_HDR_Preset];
-
-            iSK_INISection*
-                  pSection = nullptr;
-
-            auto guid =
-              SK_Display_GetDeviceNameAndGUID (rb.displays [rb.active_display].path_name);
-
-            if (     pGlobalIni->contains_section (guid))
-              pSection = &pGlobalIni->get_section (guid);
-
-            if (pSection != nullptr &&
-                pSection->contains_key (                                SK_FormatStringW (L"scRGBLuminance_[%lu]", __SK_HDR_Preset)))
-                 preset.cfg_nits->store_str       (pSection->get_value (SK_FormatStringW (L"scRGBLuminance_[%lu]", __SK_HDR_Preset)));
-            else preset.cfg_nits->store           (default_preset.peak_white_nits);
-
-            if (pSection != nullptr &&
-                pSection->contains_key (                                SK_FormatStringW (L"scRGBPaperWhite_[%lu]", __SK_HDR_Preset)))
-                 preset.cfg_paperwhite->store_str (pSection->get_value (SK_FormatStringW (L"scRGBPaperWhite_[%lu]", __SK_HDR_Preset)));
-            else preset.cfg_paperwhite->store     (default_preset.paper_white_nits);
-
-            if (pSection != nullptr &&
-                pSection->contains_key (                                SK_FormatStringW (L"MiddleGray_[%lu]", __SK_HDR_Preset)))
-                 preset.cfg_middlegray->store_str (pSection->get_value (SK_FormatStringW (L"MiddleGray_[%lu]", __SK_HDR_Preset)));
-            else preset.cfg_middlegray->store     (default_preset.middle_gray_nits);
-
-            if (pSection != nullptr &&
-                pSection->contains_key (                                SK_FormatStringW (L"scRGBGamma_[%lu]", __SK_HDR_Preset)))
-                 preset.cfg_eotf->store_str       (pSection->get_value (SK_FormatStringW (L"scRGBGamma_[%lu]", __SK_HDR_Preset)));
-            else preset.cfg_eotf->store           (default_preset.eotf);
-
-            if (pSection != nullptr &&
-                pSection->contains_key (                                SK_FormatStringW (L"Saturation_[%lu]", __SK_HDR_Preset)))
-                 preset.cfg_saturation->store_str (pSection->get_value (SK_FormatStringW (L"Saturation_[%lu]", __SK_HDR_Preset)));
-            else preset.cfg_saturation->store     (default_preset.saturation);
-
-            if (pSection != nullptr &&
-                pSection->contains_key (                                SK_FormatStringW (L"GamutExpansion_[%lu]", __SK_HDR_Preset)))
-                 preset.cfg_gamut->store_str      (pSection->get_value (SK_FormatStringW (L"GamutExpansion_[%lu]", __SK_HDR_Preset)));
-            else preset.cfg_gamut->store          (default_preset.gamut);
-
-            if (pSection != nullptr &&
-                pSection->contains_key (                                SK_FormatStringW (L"ToneMapper_[%lu]", __SK_HDR_Preset)))
-                 preset.cfg_tonemap->store_str    (pSection->get_value (SK_FormatStringW (L"ToneMapper_[%lu]", __SK_HDR_Preset)));
-            else preset.cfg_tonemap->store        (default_preset.colorspace.tonemap);
-                                                  
-            if (pSection != nullptr &&
-                pSection->contains_key (                                SK_FormatStringW (L"PerceptualBoost0_[%lu]", __SK_HDR_Preset)))
-                 preset.cfg_pq_boost0->store_str  (pSection->get_value (SK_FormatStringW (L"PerceptualBoost0_[%lu]", __SK_HDR_Preset)));
-            else preset.cfg_pq_boost0->store      (default_preset.pq_boost0);
-                                                  
-            if (pSection != nullptr &&
-                pSection->contains_key (                                SK_FormatStringW (L"PerceptualBoost1_[%lu]", __SK_HDR_Preset)))
-                 preset.cfg_pq_boost1->store_str  (pSection->get_value (SK_FormatStringW (L"PerceptualBoost1_[%lu]", __SK_HDR_Preset)));
-            else preset.cfg_pq_boost1->store      (default_preset.pq_boost1);
-                                                  
-            if (pSection != nullptr &&
-                pSection->contains_key (                                SK_FormatStringW (L"PerceptualBoost2_[%lu]", __SK_HDR_Preset)))
-                 preset.cfg_pq_boost2->store_str  (pSection->get_value (SK_FormatStringW (L"PerceptualBoost2_[%lu]", __SK_HDR_Preset)));
-            else preset.cfg_pq_boost2->store      (default_preset.pq_boost2);
-                                                  
-            if (pSection != nullptr &&
-                pSection->contains_key (                                SK_FormatStringW (L"PerceptualBoost3_[%lu]", __SK_HDR_Preset)))
-                 preset.cfg_pq_boost3->store_str  (pSection->get_value (SK_FormatStringW (L"PerceptualBoost3_[%lu]", __SK_HDR_Preset)));
-            else preset.cfg_pq_boost3->store      (default_preset.pq_boost3);
-
-            preset.cfg_nits->load         (preset.peak_white_nits);
-            preset.cfg_paperwhite->load   (preset.paper_white_nits);
-            preset.cfg_middlegray->load   (preset.middle_gray_nits);
-            preset.cfg_eotf->load         (preset.eotf);
-            preset.cfg_saturation->load   (preset.saturation);
-            preset.cfg_gamut->load        (preset.gamut);
-            preset.cfg_tonemap->load      (preset.colorspace.tonemap);
-
-            preset.cfg_pq_boost0->load    (preset.pq_boost0);
-            preset.cfg_pq_boost1->load    (preset.pq_boost1);
-            preset.cfg_pq_boost2->load    (preset.pq_boost2);
-            preset.cfg_pq_boost3->load    (preset.pq_boost3);
-
-            preset.activate ();
-          }
+          bool bReset  =
+            ImGui::Button ("Reset");
 
           ImGui::SameLine ();
 
@@ -1773,7 +1776,115 @@ public:
 
           if (ImGui::IsItemHovered ())
           {
-            ImGui::SetTooltip ("Exporting a preset allows loading it in another game using the \"Reset\" button.");
+            ImGui::SetTooltip ("Exporting a preset allows loading it in another game using the \"Import\" button.");
+          }
+
+          ImGui::SameLine ();
+
+          bool bImport =
+            ImGui::Button ("Import");
+          
+          if (ImGui::IsItemHovered ())
+          {
+            ImGui::SetTooltip ("If no profile has been exported, this will reset to default.");
+          }
+
+          if (bReset || bImport)
+          {
+            auto& default_preset =
+              hdr_defaults [__SK_HDR_Preset];
+
+            iSK_INISection*
+                  pSection = nullptr;
+
+            auto guid =
+              SK_Display_GetDeviceNameAndGUID (rb.displays [rb.active_display].path_name);
+
+            pGlobalIni->reload ();
+
+            if (     pGlobalIni->contains_section (guid))
+              pSection = &pGlobalIni->get_section (guid);
+
+            if (bImport &&
+                pSection != nullptr &&
+                pSection->contains_key (                                SK_FormatStringW (L"scRGBLuminance_[%lu]", __SK_HDR_Preset)))
+                 preset.cfg_nits->store_str       (pSection->get_value (SK_FormatStringW (L"scRGBLuminance_[%lu]", __SK_HDR_Preset)));
+            else preset.cfg_nits->store           (default_preset.peak_white_nits);
+
+            if (bImport &&
+                pSection != nullptr &&
+                pSection->contains_key (                                SK_FormatStringW (L"scRGBPaperWhite_[%lu]", __SK_HDR_Preset)))
+                 preset.cfg_paperwhite->store_str (pSection->get_value (SK_FormatStringW (L"scRGBPaperWhite_[%lu]", __SK_HDR_Preset)));
+            else preset.cfg_paperwhite->store     (default_preset.paper_white_nits);
+
+            if (bImport &&
+                pSection != nullptr &&
+                pSection->contains_key (                                SK_FormatStringW (L"MiddleGray_[%lu]", __SK_HDR_Preset)))
+                 preset.cfg_middlegray->store_str (pSection->get_value (SK_FormatStringW (L"MiddleGray_[%lu]", __SK_HDR_Preset)));
+            else preset.cfg_middlegray->store     (default_preset.middle_gray_nits);
+
+            if (bImport && 
+                pSection != nullptr &&
+                pSection->contains_key (                                SK_FormatStringW (L"scRGBGamma_[%lu]", __SK_HDR_Preset)))
+                 preset.cfg_eotf->store_str       (pSection->get_value (SK_FormatStringW (L"scRGBGamma_[%lu]", __SK_HDR_Preset)));
+            else preset.cfg_eotf->store           (default_preset.eotf);
+
+            if (bImport && 
+                pSection != nullptr &&
+                pSection->contains_key (                                SK_FormatStringW (L"Saturation_[%lu]", __SK_HDR_Preset)))
+                 preset.cfg_saturation->store_str (pSection->get_value (SK_FormatStringW (L"Saturation_[%lu]", __SK_HDR_Preset)));
+            else preset.cfg_saturation->store     (default_preset.saturation);
+
+            if (bImport && 
+                pSection != nullptr &&
+                pSection->contains_key (                                SK_FormatStringW (L"GamutExpansion_[%lu]", __SK_HDR_Preset)))
+                 preset.cfg_gamut->store_str      (pSection->get_value (SK_FormatStringW (L"GamutExpansion_[%lu]", __SK_HDR_Preset)));
+            else preset.cfg_gamut->store          (default_preset.gamut);
+
+            if (bImport && 
+                pSection != nullptr &&
+                pSection->contains_key (                                SK_FormatStringW (L"ToneMapper_[%lu]", __SK_HDR_Preset)))
+                 preset.cfg_tonemap->store_str    (pSection->get_value (SK_FormatStringW (L"ToneMapper_[%lu]", __SK_HDR_Preset)));
+            else preset.cfg_tonemap->store        (default_preset.colorspace.tonemap);
+                                                  
+            if (bImport && 
+                pSection != nullptr &&
+                pSection->contains_key (                                SK_FormatStringW (L"PerceptualBoost0_[%lu]", __SK_HDR_Preset)))
+                 preset.cfg_pq_boost0->store_str  (pSection->get_value (SK_FormatStringW (L"PerceptualBoost0_[%lu]", __SK_HDR_Preset)));
+            else preset.cfg_pq_boost0->store      (default_preset.pq_boost0);
+                                                  
+            if (bImport && 
+                pSection != nullptr &&
+                pSection->contains_key (                                SK_FormatStringW (L"PerceptualBoost1_[%lu]", __SK_HDR_Preset)))
+                 preset.cfg_pq_boost1->store_str  (pSection->get_value (SK_FormatStringW (L"PerceptualBoost1_[%lu]", __SK_HDR_Preset)));
+            else preset.cfg_pq_boost1->store      (default_preset.pq_boost1);
+                                                  
+            if (bImport && 
+                pSection != nullptr &&
+                pSection->contains_key (                                SK_FormatStringW (L"PerceptualBoost2_[%lu]", __SK_HDR_Preset)))
+                 preset.cfg_pq_boost2->store_str  (pSection->get_value (SK_FormatStringW (L"PerceptualBoost2_[%lu]", __SK_HDR_Preset)));
+            else preset.cfg_pq_boost2->store      (default_preset.pq_boost2);
+                                                  
+            if (bImport && 
+                pSection != nullptr &&
+                pSection->contains_key (                                SK_FormatStringW (L"PerceptualBoost3_[%lu]", __SK_HDR_Preset)))
+                 preset.cfg_pq_boost3->store_str  (pSection->get_value (SK_FormatStringW (L"PerceptualBoost3_[%lu]", __SK_HDR_Preset)));
+            else preset.cfg_pq_boost3->store      (default_preset.pq_boost3);
+
+            preset.cfg_nits->load         (preset.peak_white_nits);
+            preset.cfg_paperwhite->load   (preset.paper_white_nits);
+            preset.cfg_middlegray->load   (preset.middle_gray_nits);
+            preset.cfg_eotf->load         (preset.eotf);
+            preset.cfg_saturation->load   (preset.saturation);
+            preset.cfg_gamut->load        (preset.gamut);
+            preset.cfg_tonemap->load      (preset.colorspace.tonemap);
+
+            preset.cfg_pq_boost0->load    (preset.pq_boost0);
+            preset.cfg_pq_boost1->load    (preset.pq_boost1);
+            preset.cfg_pq_boost2->load    (preset.pq_boost2);
+            preset.cfg_pq_boost3->load    (preset.pq_boost3);
+
+            preset.activate ();
           }
 
           ImGui::SameLine ();
@@ -1793,6 +1904,8 @@ public:
           const bool cfg_quality =
             ImGui::CollapsingHeader ( "Performance / Quality",
                                         ImGuiTreeNodeFlags_DefaultOpen );
+
+          static bool bExperimental = false;
 
           if (rb.api != SK_RenderAPI::D3D12)
           {
@@ -1853,6 +1966,8 @@ public:
 
               };
 
+              ImGui::BeginGroup        ();
+
               changed |= ImGui::Checkbox ("Remaster 8-bit Render Passes",  &SK_HDR_RenderTargets_8bpc->PromoteTo16Bit);
 
               if (ImGui::IsItemHovered ())
@@ -1866,7 +1981,24 @@ public:
                 ImGui::EndTooltip      ();
               }
 
-                         ImGui::SameLine ();
+              if (bExperimental)
+              {
+                changed |= ImGui::Checkbox ("Remaster 8-bit Compute Passes", &SK_HDR_UnorderedViews_8bpc->PromoteTo16Bit);
+
+                if (ImGui::IsItemHovered ())
+                {
+                  ImGui::BeginTooltip  ();
+                  _SummarizeTargets    (ReadULongAcquire (&SK_HDR_UnorderedViews_8bpc->TargetsUpgraded),
+                                        ReadULongAcquire (&SK_HDR_UnorderedViews_8bpc->CandidatesSeen),
+                                        ReadAcquire64    (&SK_HDR_UnorderedViews_8bpc->BytesAllocated));
+                  ImGui::EndTooltip    ();
+                }
+              }
+
+              ImGui::EndGroup          ();
+              ImGui::SameLine          ();
+              ImGui::BeginGroup        ();
+
               changed |= ImGui::Checkbox ("Remaster 10-bit Render Passes", &SK_HDR_RenderTargets_10bpc->PromoteTo16Bit);
 
               if (ImGui::IsItemHovered ())
@@ -1880,7 +2012,24 @@ public:
                 ImGui::EndTooltip      ();
               }
 
-                         ImGui::SameLine ();
+              if (bExperimental)
+              {
+                changed |= ImGui::Checkbox ("Remaster 10-bit Compute Passes", &SK_HDR_UnorderedViews_10bpc->PromoteTo16Bit);
+
+                if (ImGui::IsItemHovered ())
+                {
+                  ImGui::BeginTooltip  ();
+                  _SummarizeTargets    (ReadULongAcquire (&SK_HDR_UnorderedViews_10bpc->TargetsUpgraded),
+                                        ReadULongAcquire (&SK_HDR_UnorderedViews_10bpc->CandidatesSeen),
+                                        ReadAcquire64    (&SK_HDR_UnorderedViews_10bpc->BytesAllocated));
+                  ImGui::EndTooltip    ();
+                }
+              }
+
+              ImGui::EndGroup          ();
+              ImGui::SameLine          ();
+              ImGui::BeginGroup        ();
+
               changed |= ImGui::Checkbox ("Remaster 11-bit Render Passes", &SK_HDR_RenderTargets_11bpc->PromoteTo16Bit);
 
               if (ImGui::IsItemHovered ())
@@ -1893,6 +2042,21 @@ public:
                                         ReadAcquire64    (&SK_HDR_RenderTargets_11bpc->BytesAllocated));
                 ImGui::EndTooltip      ();
               }
+
+              if (bExperimental)
+              {
+                changed |= ImGui::Checkbox ("Remaster 11-bit Compute Passes", &SK_HDR_UnorderedViews_11bpc->PromoteTo16Bit);
+
+                if (ImGui::IsItemHovered ())
+                {
+                  ImGui::BeginTooltip  ();
+                  _SummarizeTargets    (ReadULongAcquire (&SK_HDR_UnorderedViews_11bpc->TargetsUpgraded),
+                                        ReadULongAcquire (&SK_HDR_UnorderedViews_11bpc->CandidatesSeen),
+                                        ReadAcquire64    (&SK_HDR_UnorderedViews_11bpc->BytesAllocated));
+                  ImGui::EndTooltip    ();
+                }
+              }
+              ImGui::EndGroup          ();
             }
 
             ImGui::PopStyleColor ();
@@ -1909,7 +2073,7 @@ public:
                   ImGui::SetNextTreeNodeOpen (true, ImGuiCond_Once);
               }
 
-              bool bExperimental =
+              bExperimental =
                 ImGui::TreeNode ("Experimental");
 
               if (ImGui::IsItemHovered ())
@@ -2037,9 +2201,13 @@ public:
 
             if (changed)
             {
-              _SK_HDR_Promote8BitRGBxTo16BitFP->store  (SK_HDR_RenderTargets_8bpc ->PromoteTo16Bit);
+              _SK_HDR_Promote8BitRGBxTo16BitFP ->store (SK_HDR_RenderTargets_8bpc ->PromoteTo16Bit);
               _SK_HDR_Promote10BitRGBATo16BitFP->store (SK_HDR_RenderTargets_10bpc->PromoteTo16Bit);
-              _SK_HDR_Promote11BitRGBTo16BitFP->store  (SK_HDR_RenderTargets_11bpc->PromoteTo16Bit);
+              _SK_HDR_Promote11BitRGBTo16BitFP ->store (SK_HDR_RenderTargets_11bpc->PromoteTo16Bit);
+
+              _SK_HDR_Promote8BitUAVsTo16BitFP ->store (SK_HDR_UnorderedViews_8bpc ->PromoteTo16Bit);
+              _SK_HDR_Promote10BitUAVsTo16BitFP->store (SK_HDR_UnorderedViews_10bpc->PromoteTo16Bit);
+              _SK_HDR_Promote11BitUAVsTo16BitFP->store (SK_HDR_UnorderedViews_11bpc->PromoteTo16Bit);
 
               dll_ini->write ();
             }
@@ -2136,7 +2304,7 @@ public:
                                                                                                  "16-Bit Quantization\0"
                                                                                                  "Gamut Overshoot (vs Rec.709)\0"
                                                                                                  "Gamut Overshoot (vs DCI-P3)\0"
-                                                                                                 "Tonemap Curve and Grayscale\0\0");
+                                                                                                 "Tonemap Curve and Grayscale\0\0", 13);
                                                                                                   //"Maximum Local Clip Point v0\0"
                                                                                                   //"Maximum Local Clip Point v1\0"
                                                                                                   //"Maximum Local Clip Point v2\0\0");
@@ -2253,9 +2421,10 @@ SK_Color_xyY_from_RGB ( const SK_ColorSpace& cs, glm::highp_vec3 RGB )
     SK_Color_XYZ_from_RGB ( cs, RGB );
 
   return
-    glm::highp_vec3 ( XYZ.x / (XYZ.x + XYZ.y + XYZ.z),
-                      XYZ.y / (XYZ.x + XYZ.y + XYZ.z),
-                                       XYZ.y );
+    glm::highp_vec3 ( XYZ.x / (           XYZ.x + XYZ.y + XYZ.z ),
+                      XYZ.y / (           XYZ.x + XYZ.y + XYZ.z ),
+                        1.0 - ( XYZ.x / ( XYZ.x + XYZ.y + XYZ.z ) )
+                            - ( XYZ.y / ( XYZ.x + XYZ.y + XYZ.z ) ) );
 }
 
 void

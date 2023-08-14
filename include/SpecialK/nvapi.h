@@ -106,10 +106,13 @@ typedef enum _NV_DITHER_MODE
 typedef struct _NV_GPU_DITHER_CONTROL_V1
 {
   NvU32         version;
-  NvU16            size;
   NV_DITHER_STATE state;
   NV_DITHER_BITS   bits;
   NV_DITHER_MODE   mode;
+  struct {
+    NvU32          bits;
+    NvU32          mode;
+  } caps;
 } NV_GPU_DITHER_CONTROL_V1;
 
 #define NV_GPU_DITHER_CONTROL_VER1  MAKE_NVAPI_VERSION(NV_GPU_DITHER_CONTROL_V1, 1)
@@ -122,8 +125,7 @@ using NvAPI_Disp_SetDitherControl_pfn =
                                 NV_DITHER_MODE      mode );
 
 using NvAPI_Disp_GetDitherControl_pfn =
-      NvAPI_Status (__cdecl *)( //NvPhysicalGpuHandle       hPhysicalGpu,
-                                NvU32                     output_id,
+      NvAPI_Status (__cdecl *)( NvU32                     output_id,
                                 NV_GPU_DITHER_CONTROL_V1* ditherControl );
 
 #include <Unknwn.h>
@@ -156,7 +158,6 @@ typedef NvAPI_Status (__cdecl *NvAPI_D3D_GetObjectHandleForResource_pfn)
 extern NvAPI_GPU_GetRamType_pfn                 NvAPI_GPU_GetRamType;
 extern NvAPI_GPU_GetFBWidthAndLocation_pfn      NvAPI_GPU_GetFBWidthAndLocation;
 extern NvAPI_GPU_GetPCIEInfo_pfn                NvAPI_GPU_GetPCIEInfo;
-extern NvAPI_GetPhysicalGPUFromGPUID_pfn        NvAPI_GetPhysicalGPUFromGPUID;
 extern NvAPI_GetGPUIDFromPhysicalGPU_pfn        NvAPI_GetGPUIDFromPhysicalGPU;
 extern NvAPI_D3D_IsGSyncCapable_pfn             _NvAPI_D3D_IsGSyncCapable;
 extern NvAPI_D3D_IsGSyncActive_pfn              _NvAPI_D3D_IsGSyncActive;
@@ -217,6 +218,18 @@ namespace NVAPI {
 }
 }
 
+NVAPI_INTERFACE SK_NvAPI_Disp_GetVRRInfo             (__in NvU32 displayId, __inout NV_GET_VRR_INFO         *pVrrInfo);
+NVAPI_INTERFACE SK_NvAPI_DISP_GetMonitorCapabilities (__in NvU32 displayId, __inout NV_MONITOR_CAPABILITIES *pMonitorCapabilities);
+NVAPI_INTERFACE SK_NvAPI_DISP_GetAdaptiveSyncData    (__in NvU32 displayId, __inout NV_GET_ADAPTIVE_SYNC_DATA *pAdaptiveSyncData);
+NVAPI_INTERFACE SK_NvAPI_DISP_SetAdaptiveSyncData    (__in NvU32 displayId, __in    NV_SET_ADAPTIVE_SYNC_DATA *pAdaptiveSyncData);
+NVAPI_INTERFACE SK_NvAPI_D3D_IsGSyncCapable          (__in IUnknown          *pDeviceOrContext,
+                                                      __in NVDX_ObjectHandle   primarySurface,
+                                                     __out BOOL              *pIsGsyncCapable);
+NVAPI_INTERFACE SK_NvAPI_D3D_IsGSyncActive           (__in IUnknown          *pDeviceOrContext,
+                                                      __in NVDX_ObjectHandle   primarySurface,
+                                                     __out BOOL              *pIsGsyncActive);
+
+
 void           SK_NvAPI_PreInitHDR         (void);
 bool           SK_NvAPI_InitializeHDR      (void);
 
@@ -228,6 +241,8 @@ BOOL           SK_NvAPI_SetVRREnablement   (BOOL bEnable);
 
 BOOL           SK_NvAPI_GetFastSync        (void);
 BOOL           SK_NvAPI_SetFastSync        (BOOL bEnable);
+
+BOOL           SK_NvAPI_EnableVulkanBridge (BOOL bEnable);
 
 BOOL           SK_NvAPI_AllowGFEOverlay    (bool bAllow, wchar_t *wszAppName, wchar_t *wszExecutable);
 

@@ -1952,40 +1952,14 @@ SK_GL_SetVirtualDisplayMode (HWND hWnd, bool Fullscreen, UINT Width, UINT Height
   SK_LOGi1 (
     L"SK_GL_SetVirtualDisplayMode (%x, %s, %lu, %lu)", hWnd, Fullscreen ? L"Fullscreen"
                                                                         : L"Windowed", Width, Height);
-
-  //    hWnd  = hwndLast;
-  //if (hWnd != 0)
-  //{
-    if (Fullscreen)
-    {
-      if (SK_GL_OnD3D11)
-      {
-        SK_RunOnce (
-          SK_ImGui_Warning (
-            SK_FormatStringW ( L"%hs\tGame is using Fullscreen APIs.\r\n\r\n\r\n\t"
-            L" For Best Results:\r\n\r\n\t\t%hs\t"
-            L"Set Game to Windowed Mode and Configure SK's Borderless Options.",
-                               ICON_FA_FROWN, ICON_FA_STAR
-                   ).c_str()));
-      }
-
-    //  if (Width == 0 && Height == 0)
-    //  {
-    //    Width  = _interop_contexts [hWnd].output.viewport.Width;
-    //    Height = _interop_contexts [hWnd].output.viewport.Height;
-    //  }
-
-      RECT rect = { };
-      GetClientRect (game_window.hWnd, &rect);
-      PostMessage (  game_window.hWnd, WM_DISPLAYCHANGE, 32, MAKELPARAM (rect.right - rect.left, rect.bottom - rect.top/*Width, Height*/));
-      //Width  = rect.right  - rect.left;
-      //Height = rect.bottom - rect.top;
-    }
-    //
-    //_interop_contexts [hWnd].gl.fullscreen = false;// Fullscreen;
-    //_interop_contexts [hWnd].gl.width      = Width;
-    //_interop_contexts [hWnd].gl.height     = Height;
-  //}
+  if (Fullscreen)
+  {
+    RECT                              rect = { };
+    GetClientRect (game_window.hWnd, &rect);
+    PostMessage (  game_window.hWnd, WM_DISPLAYCHANGE,
+                                 32, MAKELPARAM ( rect.right  - rect.left,
+                                                  rect.bottom - rect.top ) );
+  }
 }
 
 HRESULT
@@ -2205,7 +2179,8 @@ SK_GL_SwapBuffers (HDC hDC, LPVOID pfnSwapFunc)
               nullptr,//pAdapter [0].p,
                 D3D_DRIVER_TYPE_HARDWARE,
                   nullptr,
-                    0x0,
+                    D3D11_CREATE_DEVICE_SINGLETHREADED |
+                    D3D11_CREATE_DEVICE_PREVENT_INTERNAL_THREADING_OPTIMIZATIONS,
                       levels,
           _ARRAYSIZE (levels),
                           D3D11_SDK_VERSION,
@@ -2522,8 +2497,10 @@ SK_GL_SwapBuffers (HDC hDC, LPVOID pfnSwapFunc)
       wglDXLockObjectsNV   ( dx_gl_interop.d3d11.hInteropDevice, 1,
                             &dx_gl_interop.d3d11.staging.hColorBuffer );
 
+      GLint                                   original_scissor;
       GLint                                   original_fbo;
       glGetIntegerv (GL_FRAMEBUFFER_BINDING, &original_fbo);
+      glGetIntegerv (GL_SCISSOR_TEST,        &original_scissor);
 
       glBindFramebuffer         (GL_FRAMEBUFFER,  dx_gl_interop.gl.fbo);
       glFramebufferRenderbuffer (GL_FRAMEBUFFER,  GL_COLOR_ATTACHMENT0,
@@ -2531,6 +2508,8 @@ SK_GL_SwapBuffers (HDC hDC, LPVOID pfnSwapFunc)
 
       glBindFramebuffer (GL_READ_FRAMEBUFFER, 0);
       glBindFramebuffer (GL_DRAW_FRAMEBUFFER, dx_gl_interop.gl.fbo);
+
+      glDisable         (GL_SCISSOR_TEST);
 
       GLint w = static_cast <GLint> (dx_gl_interop.output.viewport.Width),
             h = static_cast <GLint> (dx_gl_interop.output.viewport.Height);
@@ -2586,6 +2565,9 @@ SK_GL_SwapBuffers (HDC hDC, LPVOID pfnSwapFunc)
       if (glClampColor != nullptr)
           glClampColor  (GL_CLAMP_READ_COLOR, GL_FALSE);
       glFlush           (                             );
+
+      if (original_scissor == GL_TRUE)
+        glEnable (GL_SCISSOR_TEST);
 
       wglDXUnlockObjectsNV ( dx_gl_interop.d3d11.hInteropDevice, 1,
                             &dx_gl_interop.d3d11.staging.hColorBuffer );
@@ -4043,7 +4025,7 @@ glFramebufferTexture_SK ( GLenum target,
   extern bool __SK_HDR_16BitSwap;
   if (__SK_HDR_16BitSwap || config.render.gl.enable_16bit_hdr)
   {
-    dll_log->Log (L"glFramebufferTexture (...)");
+    SK_LOGi1 (L"glFramebufferTexture (...)");
   }
 
   gl_framebuffer_texture (target, attachment, texture, level);
@@ -4189,7 +4171,7 @@ glFramebufferTexture2D_SK ( GLenum target,
   extern bool __SK_HDR_16BitSwap;
   if (__SK_HDR_16BitSwap || config.render.gl.enable_16bit_hdr)
   {
-    dll_log->Log (L"glFramebufferTexture2D (...)");
+    SK_LOGi1 (L"glFramebufferTexture2D (...)");
 
     if (textarget == GL_TEXTURE_2D)
     {
@@ -4205,7 +4187,7 @@ glFramebufferTexture2D_SK ( GLenum target,
         glBindTexture            (GL_TEXTURE_2D, texture);
         glGetTexLevelParameteriv (GL_TEXTURE_2D, 0, GL_TEXTURE_INTERNAL_FORMAT, &textureFmt);
 
-        dll_log->Log (L" -> Format: %x", textureFmt);
+        SK_LOGi1 (L" -> Format: %x", textureFmt);
 
         bool rgb =
           (  textureFmt == GL_RGB   || textureFmt == GL_RGB8 );
@@ -4221,7 +4203,7 @@ glFramebufferTexture2D_SK ( GLenum target,
             glGetTexLevelParameteriv (GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH,  &texWidth);
             glGetTexLevelParameteriv (GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &texHeight);
 
-            dll_log->Log (L"GL_RGB{A}[8] replaced with GL_RGB{A}16F");
+            SK_LOGi1 (L"GL_RGB{A}[8] replaced with GL_RGB{A}16F");
 
             glTexImage2D (GL_TEXTURE_2D, 0, rgb ? GL_RGB16F : GL_RGBA16F, texWidth, texHeight, 0,
                                             rgb ? GL_RGB    : GL_RGBA, GL_FLOAT, nullptr);

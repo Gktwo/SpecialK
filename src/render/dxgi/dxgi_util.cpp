@@ -29,6 +29,7 @@
 #include <SpecialK/render/dxgi/dxgi_interfaces.h>
 #include <SpecialK/render/d3d11/d3d11_tex_mgr.h>
 #include <SpecialK/render/d3d11/d3d11_core.h>
+#include <SpecialK/render/d3d11/d3d11_state_tracker.h>
 
 #include <concurrent_unordered_map.h>
 
@@ -1112,7 +1113,7 @@ SK_DXGI_LinearizeSRGB (IDXGISwapChain* pChainThatUsedToBeSRGB)
       pDevCtx->SOSetTargets         (0,       nullptr, nullptr);
     }
 
-    pDevCtx->Draw                   (4, 0);
+    pDevCtx->Draw                   (3, 0);
 
     ApplyStateblock (pDevCtx, &stateBlock);
     //sb.Apply (pDevCtx.p);
@@ -1166,7 +1167,8 @@ SK_DXGI_IsFormatCastable ( DXGI_FORMAT inFormat,
 
 bool
 SK_D3D11_BltCopySurface ( ID3D11Texture2D *pSrcTex,
-                          ID3D11Texture2D *pDstTex )
+                          ID3D11Texture2D *pDstTex,
+            _In_opt_ const D3D11_BOX      *pSrcBox )
 {
   SK_ComPtr <ID3D11DeviceContext> pDevCtx;
   SK_ComPtr <ID3D11Device>        pDev;
@@ -1512,11 +1514,6 @@ SK_D3D11_BltCopySurface ( ID3D11Texture2D *pSrcTex,
                        .no_alpha    =
                          (! DirectX::HasAlpha (srcTexDesc.Format)) };
 
-    if (! DirectX::HasAlpha (srcTexDesc.Format))
-    {
-      SK_LOGi0 (L"Source Of Blt Has No Alpha Channel");
-    }
-
     _ReadWriteBarrier ();
 
     memcpy (    static_cast <SK_DXGI_sRGBCoDec::params_cbuffer_s *> (mapped_resource.pData),
@@ -1578,8 +1575,21 @@ SK_D3D11_BltCopySurface ( ID3D11Texture2D *pSrcTex,
     pDevCtx->GSSetShader          (nullptr, nullptr,       0);
     pDevCtx->SOSetTargets         (0,       nullptr, nullptr);
   }
+
+  // Implement partial copies using scissor
+  //
+  if (pSrcBox != nullptr)
+  {
+    D3D11_RECT scissor_rect = {};
+    scissor_rect.left   = pSrcBox->left;
+    scissor_rect.right  = pSrcBox->right;
+    scissor_rect.top    = pSrcBox->top;
+    scissor_rect.bottom = pSrcBox->bottom;
+
+    pDevCtx->RSSetScissorRects (1, &scissor_rect);
+  }
   
-  pDevCtx->Draw                   (4, 0);
+  pDevCtx->Draw                   (3, 0);
   
   SK_ComQIPtr <ID3D11DeviceContext1> pDevCtx1 (pDevCtx);
   
@@ -1637,7 +1647,7 @@ SK_D3D11_BltCopySurface ( ID3D11Texture2D *pSrcTex,
                                           &pSrvMipLod.p );
 
         pDevCtx->RSSetViewports (1, &vp_sub);
-        pDevCtx->Draw           (4, 0);
+        pDevCtx->Draw           (3, 0);
 
         if (pDstTex != nullptr && surface.render.tex != nullptr)
         {
@@ -1731,6 +1741,36 @@ SK_D3D11_AreTexturesDirectCopyable (D3D11_TEXTURE2D_DESC* pSrcDesc, D3D11_TEXTUR
   return true;
 }
 
+bool
+SK_D3D11_CheckForMatchingDevicesUsingPrivateData ( ID3D11Device *pDevice0,
+                                                   ID3D11Device *pDevice1 )
+{
+  bool matching = false;
+
+  uintptr_t  ptr0 = 0,
+             ptr1 = 0;
+  UINT      size0 = sizeof (uintptr_t),
+            size1 = sizeof (uintptr_t);
+
+  pDevice0->GetPrivateData (SKID_D3D11DeviceBasePtr, &size0, &ptr0);
+  pDevice1->GetPrivateData (SKID_D3D11DeviceBasePtr, &size1, &ptr1);
+
+  matching =
+    ( ptr0 == ptr1 ) && ptr0 != 0;
+
+  return matching;
+}
+
+bool
+SK_D3D11_EnsureMatchingDevices (ID3D11Device *pDevice0, ID3D11Device *pDevice1)
+{
+  if (pDevice0 == nullptr || pDevice1 == nullptr)
+    return false;
+
+  return
+    ( pDevice0 == pDevice1 ) ||
+      SK_D3D11_CheckForMatchingDevicesUsingPrivateData (pDevice0, pDevice1);
+}
 
 bool
 SK_D3D11_EnsureMatchingDevices (ID3D11DeviceChild *pDeviceChild, ID3D11Device *pDevice)
@@ -1742,8 +1782,10 @@ SK_D3D11_EnsureMatchingDevices (ID3D11DeviceChild *pDeviceChild, ID3D11Device *p
   pDeviceChild->GetDevice (&pParentDevice);
 
   return
-    pParentDevice.p      ==      pDevice ||
-    pParentDevice.IsEqualObject (pDevice);
+    pParentDevice.p      ==      pDevice  ||
+    pParentDevice.IsEqualObject (pDevice) ||
+      SK_D3D11_CheckForMatchingDevicesUsingPrivateData (
+                pParentDevice.p, pDevice );
 }
 
 bool
@@ -1756,6 +1798,136 @@ SK_D3D11_EnsureMatchingDevices (IDXGISwapChain *pSwapChain, ID3D11Device *pDevic
   pSwapChain->GetDevice   (IID_ID3D11Device, (void **)&pSwapChainDevice);
 
   return
-    pSwapChainDevice.p      ==      pDevice ||
-    pSwapChainDevice.IsEqualObject (pDevice);
+    pSwapChainDevice.p      ==      pDevice  ||
+    pSwapChainDevice.IsEqualObject (pDevice) ||
+      SK_D3D11_CheckForMatchingDevicesUsingPrivateData (
+                pSwapChainDevice.p, pDevice );
+}
+
+
+// Classifies a swapchain as dummy (used by some libraries during init) or
+//   real (potentially used to do actual rendering).
+bool
+SK_DXGI_IsSwapChainReal (const DXGI_SWAP_CHAIN_DESC& desc) noexcept
+{
+  // 0x0 is implicitly sized to match its HWND's client rect,
+  //
+  //   => Anything ( 1x1 - 31x31 ) has no practical application.
+  //
+#if 0
+  if (desc.BufferDesc.Height > 0 && desc.BufferDesc.Height < 32)
+    return false;
+  if (desc.BufferDesc.Width > 0  && desc.BufferDesc.Width  < 32)
+    return false;
+#endif
+
+  bool dummy_window =
+    SK_Win32_IsDummyWindowClass (desc.OutputWindow);
+
+  wchar_t   wszClass [64] = { };
+  RealGetWindowClassW
+    ( desc.OutputWindow, wszClass, 63 );
+
+  if (dummy_window)
+    SK_LOGi0 ( L"Ignoring SwapChain associated with Window Class: %ws",
+                 wszClass );
+  else
+    SK_LOGi1 ( L"Typical SwapChain Associated with Window Class: %ws",
+                 wszClass );
+
+  return
+    (! dummy_window);
+}
+
+bool
+SK_DXGI_IsSwapChainReal1 (const DXGI_SWAP_CHAIN_DESC1& desc, HWND OutputWindow) noexcept
+{
+  (void)desc;
+
+  wchar_t              wszClass [64] = { };
+  RealGetWindowClassW (
+         OutputWindow, wszClass, 63);
+
+  bool dummy_window =
+    SK_Win32_IsDummyWindowClass (OutputWindow);
+
+  if (dummy_window)
+    SK_LOGi0 ( L"Ignoring SwapChain associated with Window Class: %ws",
+                 wszClass );
+  else
+    SK_LOGi1 ( L"Typical SwapChain Associated with Window Class: %ws",
+                 wszClass );
+
+  return
+    (! dummy_window);
+}
+
+bool
+SK_DXGI_IsSwapChainReal (IDXGISwapChain *pSwapChain) noexcept
+{
+  if (! pSwapChain)
+    return false;
+
+  DXGI_SWAP_CHAIN_DESC       desc = { };
+       pSwapChain->GetDesc (&desc);
+  return
+    SK_DXGI_IsSwapChainReal (desc);
+}
+
+#include <SpecialK/render/dxgi/dxgi_swapchain.h>
+
+HRESULT
+SK_DXGI_GetPrivateData ( IDXGIObject *pObject,
+                   const GUID        &kName,
+                         UINT        uiMaxBytes,
+                         void        *pPrivateData )
+{
+  UINT size = 0;
+
+  if (SUCCEEDED (pObject->GetPrivateData (kName, &size, nullptr)))
+  {
+    if (size <= uiMaxBytes)
+    {
+      return
+        pObject->GetPrivateData (kName, &size, pPrivateData);
+    }
+
+    return
+      DXGI_ERROR_MORE_DATA;
+  }
+
+  return
+    DXGI_ERROR_NOT_FOUND;
+}
+
+HRESULT
+SK_DXGI_SetPrivateData ( IDXGIObject *pObject,
+                      const GUID     &kName,
+                            UINT     uiNumBytes,
+                            void     *pPrivateData )
+{
+  return
+    pObject->SetPrivateData (kName, uiNumBytes, pPrivateData);
+}
+
+template <>
+HRESULT
+SK_DXGI_GetPrivateData ( IDXGIObject *pObject,
+   IWrapDXGISwapChain::state_cache_s *pPrivateData )
+{
+  return
+    SK_DXGI_GetPrivateData ( pObject, SKID_DXGI_SwapChain_StateCache,
+      sizeof (IWrapDXGISwapChain::state_cache_s),
+                             pPrivateData );
+}
+
+template <>
+HRESULT
+SK_DXGI_SetPrivateData ( IDXGIObject *pObject,
+   IWrapDXGISwapChain::state_cache_s *pPrivateData )
+{
+  return
+    SK_DXGI_SetPrivateData ( pObject, SKID_DXGI_SwapChain_StateCache,
+      sizeof (IWrapDXGISwapChain::state_cache_s),
+                             pPrivateData );
 }

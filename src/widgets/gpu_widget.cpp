@@ -61,7 +61,7 @@ struct sk_sensor_prefs_s
 class SKWG_GPU_Monitor : public SK_Widget
 {
 public:
-  SKWG_GPU_Monitor (void) noexcept : SK_Widget ("GPUMonitor")
+  SKWG_GPU_Monitor (void) noexcept : SK_Widget ("GPU Monitor")
   {
     SK_ImGui_Widgets->gpu_monitor = this;
 
@@ -191,25 +191,37 @@ public:
           *pData = param->get_value ();
         }
       }
+
+      setMinSize (
+        ImVec2 (std::max (450.0f, getMinSize ().x),
+                std::max (50.0f,  getMinSize ().y))
+      ).
+      setMaxSize (
+        ImVec2 (std::max (450.0f, getMaxSize ().x),
+                std::max (50.0f,  getMaxSize ().y))
+      );
     }
 
-    if (last_update < SK::ControlPanel::current_time - update_freq)
+    if (active)
     {
-      SK_PollGPU ();
-
-      static bool        once = false;
-      if (std::exchange (once, true))
+      if (last_update < SK::ControlPanel::current_time - update_freq)
       {
-        core_clock_ghz.addValue ( SK_GPU_GetClockRateInkHz    (0) / 0.001_GHz);
-        vram_clock_ghz.addValue ( SK_GPU_GetMemClockRateInkHz (0) / 0.001_GHz);
-        gpu_load.addValue       ( SK_GPU_GetGPULoad           (0)    );
-        gpu_temp_c.addValue     ( SK_GPU_GetTempInC           (0)    );
-        vram_used_mib.addValue  ( SK_GPU_GetVRAMUsed          (0) / 1.0_MiB);
-    //vram_shared.addValue    (        SK_GPU_GetVRAMShared (0));
-        fan_rpm.addValue        ( (float)SK_GPU_GetFanSpeedRPM(0));
-      }
+        SK_PollGPU ();
 
-      last_update = SK::ControlPanel::current_time;
+        static bool        once = false;
+        if (std::exchange (once, true))
+        {
+          core_clock_ghz.addValue ( SK_GPU_GetClockRateInkHz    (0) / 0.001_GHz);
+          vram_clock_ghz.addValue ( SK_GPU_GetMemClockRateInkHz (0) / 0.001_GHz);
+          gpu_load.addValue       ( SK_GPU_GetGPULoad           (0)    );
+          gpu_temp_c.addValue     ( SK_GPU_GetTempInC           (0)    );
+          vram_used_mib.addValue  ( SK_GPU_GetVRAMUsed          (0) / 1.0_MiB);
+      //vram_shared.addValue    (        SK_GPU_GetVRAMShared (0));
+          fan_rpm.addValue        ( (float)SK_GPU_GetFanSpeedRPM(0));
+        }
+
+        last_update = SK::ControlPanel::current_time;
+      }
     }
   }
 
@@ -304,7 +316,8 @@ public:
     };
 
 
-    char szAvg  [512] = { };
+    char szAvg [512] = { };
+    char szCur [32]  = { };
 
     auto item_inner_spacing =
       ImGui::GetStyle ().ItemInnerSpacing;
@@ -325,6 +338,7 @@ public:
                    (float)gpu_load.getCapacity () );
 
       float fx = ImGui::GetCursorPosX ();
+      float fw = ImGui::GetContentRegionAvailWidth ();
 
       ImGui::PlotLinesC ( "###GPU_LoadPercent",
                            gpu_load.getValues     ().data (),
@@ -334,17 +348,20 @@ public:
                                    gpu_load.getMin   () * 0.95f,
                                      gpu_load.getMax () * 1.05f,
                                        ImVec2 (
-                                         ImGui::GetContentRegionAvailWidth (), font_size * 4.5f),
+                                         fw, font_size * 4.5f),
                                            4, _MinVal (0.0f,   &gpu_load_prefs),
                                               _MaxVal (100.0f, &gpu_load_prefs) );
 
       float fy = ImGui::GetCursorPosY ();
 
-      ImGui::SameLine      (  );
-      ImGui::SetCursorPosX (fx                      + item_inner_spacing.x);
-      ImGui::SetCursorPosY (ImGui::GetCursorPosY () + item_inner_spacing.y);
-      ImGui::Text ("%4.1f%%", gpu_load.getLastValue ());
-      ImGui::SetCursorPosY (fy);
+      snprintf (szCur, 31, "%4.1f%%", gpu_load.getLastValue ());
+
+      ImGui::SameLine        (  );
+      ImGui::SetCursorPosX   (fx                      - item_inner_spacing.x +
+                              fw             - ImGui::CalcTextSize (szCur).x);
+      ImGui::SetCursorPosY   (ImGui::GetCursorPosY () + item_inner_spacing.y);
+      ImGui::TextUnformatted (szCur);
+      ImGui::SetCursorPosY   (fy);
     }
 
     if (gpu_temp_prefs.enable)
@@ -352,8 +369,8 @@ public:
       snprintf
         ( szAvg,
             511,
-              (const char *)u8"GPU%lu Temp (°C):\n\n\n"
-                            u8"          min: %3.0f? max: %3.0f? avg: %4.1f°\n",
+              (const char *)u8"GPU%lu Temp (ç™ˆ):\n\n\n"
+                            u8"          min: %3.0f? max: %3.0f? avg: %4.1fç™¨n",
                 0,
                   gpu_temp_c.getMin   (), gpu_temp_c.getMax (),
                     gpu_temp_c.getAvg () );
@@ -363,6 +380,7 @@ public:
                    (float)gpu_temp_c.getCapacity () );
 
       float fx = ImGui::GetCursorPosX ();
+      float fw = ImGui::GetContentRegionAvailWidth ();
 
       ImGui::PlotLinesC ( "###GPU_TempC",
                            gpu_temp_c.getValues     ().data (),
@@ -372,24 +390,27 @@ public:
                                    gpu_temp_c.getMin   () * 0.95f,
                                      gpu_temp_c.getMax () * 1.05f,
                                        ImVec2 (
-                                         ImGui::GetContentRegionAvailWidth (), font_size * 4.5f),
+                                         fw, font_size * 4.5f),
                                            4, _MinVal (50.0f, &gpu_temp_prefs),
                                               _MaxVal (94.0f, &gpu_temp_prefs) );
       
       float fy = ImGui::GetCursorPosY ();
 
-      ImGui::SameLine      (  );
-      ImGui::SetCursorPosX (fx                      + item_inner_spacing.x);
-      ImGui::SetCursorPosY (ImGui::GetCursorPosY () + item_inner_spacing.y);
-      ImGui::Text ("%4.1f?, gpu_temp_c.getLastValue ()");
-      ImGui::SetCursorPosY (fy);
+      snprintf(szCur, 31, "%4.1fÂ°", gpu_temp_c.getLastValue());
+
+      ImGui::SameLine        (  );
+      ImGui::SetCursorPosX   (fx                      - item_inner_spacing.x +
+                              fw             - ImGui::CalcTextSize (szCur).x);
+      ImGui::SetCursorPosY   (ImGui::GetCursorPosY () + item_inner_spacing.y);
+      ImGui::TextUnformatted (szCur);
+      ImGui::SetCursorPosY   (fy);
     }
 
 
     static float min_rpm =  std::numeric_limits <float>::infinity ();
     static float max_rpm = -std::numeric_limits <float>::infinity ();
 
-    if (fan_rpm.getMin () > 0.0f && gpu_fan_prefs.enable)
+    if (fan_rpm.getAvg () > 0.0f && gpu_fan_prefs.enable)
     {
       snprintf
         ( szAvg,
@@ -410,6 +431,7 @@ public:
         std::max ( max_rpm, fan_rpm.getMax () > 0 ? fan_rpm.getMax () : max_rpm );
 
       float fx = ImGui::GetCursorPosX ();
+      float fw = ImGui::GetContentRegionAvailWidth ();
 
       ImGui::PlotLinesC ( "###GPU_FanSpeed_Hz",
                            fan_rpm.getValues     ().data (),
@@ -419,17 +441,20 @@ public:
                                    fan_rpm.getMin () * 0.95f,
                                      max_rpm         * 1.05f,
                                        ImVec2 (
-                                         ImGui::GetContentRegionAvailWidth (), font_size * 4.5f),
+                                         fw, font_size * 4.5f),
                                          4, _MinVal (min_rpm, &gpu_fan_prefs),
                                             _MaxVal (max_rpm, &gpu_fan_prefs), 0.0f, true );
 
       float fy = ImGui::GetCursorPosY ();
 
-      ImGui::SameLine      (  );
-      ImGui::SetCursorPosX (fx                      + item_inner_spacing.x);
-      ImGui::SetCursorPosY (ImGui::GetCursorPosY () + item_inner_spacing.y);
-      ImGui::Text ("%4.1f", fan_rpm.getLastValue ());
-      ImGui::SetCursorPosY (fy);
+      snprintf (szCur, 31, "%4.1f", fan_rpm.getLastValue ());
+
+      ImGui::SameLine        (  );
+      ImGui::SetCursorPosX   (fx                      - item_inner_spacing.x +
+                              fw             - ImGui::CalcTextSize (szCur).x);
+      ImGui::SetCursorPosY   (ImGui::GetCursorPosY () + item_inner_spacing.y);
+      ImGui::TextUnformatted (szCur);
+      ImGui::SetCursorPosY   (fy);
     }
 
     if (core_clock_prefs.enable)
@@ -455,6 +480,7 @@ public:
                                        core_clock_ghz.getMin ()     : min_clock);
 
       float fx = ImGui::GetCursorPosX ();
+      float fw = ImGui::GetContentRegionAvailWidth ();
 
       ImGui::PlotLinesC ( "###GPU_CoreClock",
                            core_clock_ghz.getValues ().data (),
@@ -464,17 +490,20 @@ public:
                                    core_clock_ghz.getMin   () / 1.05f,
                                      core_clock_ghz.getMax () * 1.05f,
                                        ImVec2 (
-                                         ImGui::GetContentRegionAvailWidth (), font_size * 4.5f),
+                                         fw, font_size * 4.5f),
                                            4, _MinVal (min_clock, &core_clock_prefs),
                                               _MaxVal (max_clock, &core_clock_prefs) );
 
       float fy = ImGui::GetCursorPosY ();
 
-      ImGui::SameLine      (  );
-      ImGui::SetCursorPosX (fx                      + item_inner_spacing.x);
-      ImGui::SetCursorPosY (ImGui::GetCursorPosY () + item_inner_spacing.y);
-      ImGui::Text ("%5.3f", core_clock_ghz.getLastValue ());
-      ImGui::SetCursorPosY (fy);
+      snprintf (szCur, 31, "%5.3f", core_clock_ghz.getLastValue ());
+
+      ImGui::SameLine        (  );
+      ImGui::SetCursorPosX   (fx                      - item_inner_spacing.x +
+                              fw             - ImGui::CalcTextSize (szCur).x);
+      ImGui::SetCursorPosY   (ImGui::GetCursorPosY () + item_inner_spacing.y);
+      ImGui::TextUnformatted (szCur);
+      ImGui::SetCursorPosY   (fy);
     }
 
     if (vram_clock_prefs.enable)
@@ -500,6 +529,7 @@ public:
                                                  vram_clock_ghz.getMin ()     : min_vram_clock);
 
       float fx = ImGui::GetCursorPosX ();
+      float fw = ImGui::GetContentRegionAvailWidth ();
 
       ImGui::PlotLinesC ( "###GPU_VRAMClock",
                            vram_clock_ghz.getValues ().data (),
@@ -509,17 +539,20 @@ public:
                                    vram_clock_ghz.getMin   () * 0.95f,
                                      vram_clock_ghz.getMax () * 1.05f,
                                        ImVec2 (
-                                         ImGui::GetContentRegionAvailWidth (), font_size * 4.5f),
+                                         fw, font_size * 4.5f),
                                            4, _MinVal (min_vram_clock, &vram_clock_prefs),
                                               _MaxVal (max_vram_clock, &vram_clock_prefs) );
 
       float fy = ImGui::GetCursorPosY ();
 
-      ImGui::SameLine      (  );
-      ImGui::SetCursorPosX (fx                      + item_inner_spacing.x);
-      ImGui::SetCursorPosY (ImGui::GetCursorPosY () + item_inner_spacing.y);
-      ImGui::Text ("%5.3f", vram_clock_ghz.getLastValue ());
-      ImGui::SetCursorPosY (fy);
+      snprintf (szCur, 31, "%5.3f", vram_clock_ghz.getLastValue ());
+
+      ImGui::SameLine        (  );
+      ImGui::SetCursorPosX   (fx                      - item_inner_spacing.x +
+                              fw             - ImGui::CalcTextSize (szCur).x);
+      ImGui::SetCursorPosY   (ImGui::GetCursorPosY () + item_inner_spacing.y);
+      ImGui::TextUnformatted (szCur);
+      ImGui::SetCursorPosY   (fy);
     }
 
     // TODO: Add a parameter to data history to control this
@@ -549,6 +582,7 @@ public:
         capacity_in_mib = 4096.0f; // Just take a wild guess, lol
 
       float fx = ImGui::GetCursorPosX ();
+      float fw = ImGui::GetContentRegionAvailWidth ();
 
       ImGui::PlotLinesC ( "###GPU_VRAMUsage",
                            vram_used_mib.getValues ().data (),
@@ -558,17 +592,20 @@ public:
                                    0.0f,//vram_used_mib.getMin () / 1.1f,
                                      capacity_in_mib       * 1.05f,
                                        ImVec2 (
-                                         ImGui::GetContentRegionAvailWidth (), font_size * 4.5f),
+                                         fw, font_size * 4.5f),
                                            4, _MinVal (0.0f,            &vram_used_prefs),
                                               _MaxVal (capacity_in_mib, &vram_used_prefs) );
 
       float fy = ImGui::GetCursorPosY ();
 
-      ImGui::SameLine      (  );
-      ImGui::SetCursorPosX (fx                      + item_inner_spacing.x);
-      ImGui::SetCursorPosY (ImGui::GetCursorPosY () + item_inner_spacing.y);
-      ImGui::Text ("%6.1f", vram_used_mib.getLastValue ());
-      ImGui::SetCursorPosY (fy);
+      snprintf (szCur, 31, "%6.1f", vram_used_mib.getLastValue ());
+
+      ImGui::SameLine        (  );
+      ImGui::SetCursorPosX   (fx                      - item_inner_spacing.x +
+                              fw             - ImGui::CalcTextSize (szCur).x);
+      ImGui::SetCursorPosY   (ImGui::GetCursorPosY () + item_inner_spacing.y);
+      ImGui::TextUnformatted (szCur);
+      ImGui::SetCursorPosY   (fy);
     }
   }
 
@@ -604,7 +641,7 @@ private:
   sk_sensor_prefs_s gpu_load_prefs   { true, "GPU Load (%)",
                                               L"Load",
                                        &gpu_load,       0.0f, 100.0f };
-  sk_sensor_prefs_s gpu_temp_prefs   { true, (const char *)u8"GPU Temperature (°C)",
+  sk_sensor_prefs_s gpu_temp_prefs   { true, (const char *)u8"GPU Temperature (ç™ˆ)",
                                               L"Temperature",
                                        &gpu_temp_c,    40.0f, 94.0f  };
   sk_sensor_prefs_s gpu_fan_prefs    { true, "GPU Fan Speed (RPM)",

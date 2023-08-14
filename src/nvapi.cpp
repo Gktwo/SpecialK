@@ -41,10 +41,28 @@ NvAPI_Disp_ColorControl_pfn       NvAPI_Disp_ColorControl_Original       = nullp
 NvAPI_GPU_GetRamType_pfn            NvAPI_GPU_GetRamType            = nullptr;
 NvAPI_GPU_GetFBWidthAndLocation_pfn NvAPI_GPU_GetFBWidthAndLocation = nullptr;
 NvAPI_GPU_GetPCIEInfo_pfn           NvAPI_GPU_GetPCIEInfo           = nullptr;
-NvAPI_GetPhysicalGPUFromGPUID_pfn   NvAPI_GetPhysicalGPUFromGPUID   = nullptr;
 NvAPI_GetGPUIDFromPhysicalGPU_pfn   NvAPI_GetGPUIDFromPhysicalGPU   = nullptr;
 NvAPI_Disp_SetDitherControl_pfn     NvAPI_Disp_SetDitherControl     = nullptr;
 NvAPI_Disp_GetDitherControl_pfn     NvAPI_Disp_GetDitherControl     = nullptr;
+
+struct NVAPI_ThreadSafety {
+  struct {
+    SK_Thread_HybridSpinlock Init;
+    SK_Thread_HybridSpinlock QueryInterface;
+    SK_Thread_HybridSpinlock DISP_GetMonitorCapabilities;
+    SK_Thread_HybridSpinlock Disp_ColorControl;
+    SK_Thread_HybridSpinlock Disp_HdrColorControl;
+    SK_Thread_HybridSpinlock Disp_GetHdrCapabilities;
+    SK_Thread_HybridSpinlock Disp_GetVRRInfo;
+    SK_Thread_HybridSpinlock DISP_GetAdaptiveSyncData;
+    SK_Thread_HybridSpinlock DISP_SetAdaptiveSyncData;
+    SK_Thread_HybridSpinlock D3D_IsGSyncCapable;
+    SK_Thread_HybridSpinlock D3D_IsGSyncActive;
+  } locks;
+};
+
+SK_LazyGlobal <NVAPI_ThreadSafety> SK_NvAPI_Threading;
+
 
 using namespace sk;
 using namespace sk::NVAPI;
@@ -257,11 +275,11 @@ sk::NVAPI::EnumGPUs_DXGI (void)
 
     NVAPI_CALL (GPU_GetFullName (_nv_dxgi_gpus [i], name));
 
-    NV_DISPLAY_DRIVER_MEMORY_INFO meminfo;
-    meminfo.version = NV_DISPLAY_DRIVER_MEMORY_INFO_VER_2;
-    // ^^^ V3 is for Windows 10+ only, we don't even care about eviction stats.
+    NV_GPU_MEMORY_INFO_EX
+      meminfo;
+      meminfo.version = NV_GPU_MEMORY_INFO_EX_VER_1;
 
-    NVAPI_CALL (GPU_GetMemoryInfo (_nv_dxgi_gpus [i], &meminfo));
+    NvAPI_GPU_GetMemoryInfoEx (_nv_dxgi_gpus [i], &meminfo);
 
     MultiByteToWideChar (CP_OEMCP, 0, name, -1, adapterDesc.Description, 64);
 
@@ -408,6 +426,9 @@ __cdecl
 NvAPI_Disp_GetHdrCapabilities_Override ( NvU32                displayId,
                                          NV_HDR_CAPABILITIES *pHdrCapabilities )
 {
+  std::lock_guard
+       lock (SK_NvAPI_Threading->locks.Disp_GetHdrCapabilities);
+
   if (config.apis.NvAPI.disable_hdr)
     return NVAPI_LIBRARY_NOT_FOUND;
 
@@ -437,6 +458,9 @@ NvAPI_Disp_GetHdrCapabilities_Override ( NvU32                displayId,
       L"  | ST2084 Gamma... |  %s\n"
       L"  | HDR Gamma...... |  %s\n"
       L"  | SDR Gamma...... |  %s\n"
+      L"  | Dolby Vision... |  %s\n"
+      L"  | HDR10+......... |  %s\n"
+      L"  | HDR10+ Gaming.. |  %s\n"
       L"  |  ?  4:4:4 10bpc |  %s\n"
       L"  |  ?  4:4:4 12bpc |  %s\n"
       L"  | YUV 4:2:2 12bpc |  %s\n"
@@ -452,6 +476,9 @@ NvAPI_Disp_GetHdrCapabilities_Override ( NvU32                displayId,
                pHdrCapabilities->isST2084EotfSupported                          ? L"Yes" : L"No",
                pHdrCapabilities->isTraditionalHdrGammaSupported                 ? L"Yes" : L"No",
                pHdrCapabilities->isTraditionalSdrGammaSupported                 ? L"Yes" : L"No",
+               pHdrCapabilities->isDolbyVisionSupported                         ? L"Yes" : L"No",
+               pHdrCapabilities->isHdr10PlusSupported                           ? L"Yes" : L"No",
+               pHdrCapabilities->isHdr10PlusGamingSupported                     ? L"Yes" : L"No",
               (pHdrCapabilities->dv_static_metadata.supports_10b_12b_444 & 0x1) ? L"Yes" : L"No",
               (pHdrCapabilities->dv_static_metadata.supports_10b_12b_444 & 0x2) ? L"Yes" : L"No",
                pHdrCapabilities->dv_static_metadata.supports_YUV422_12bit       ? L"Yes" : L"No");
@@ -485,6 +512,9 @@ __cdecl
 NvAPI_Disp_ColorControl_Override ( NvU32          displayId,
                                    NV_COLOR_DATA *pColorData )
 {
+  std::lock_guard
+       lock (SK_NvAPI_Threading->locks.Disp_ColorControl);
+
   SK_LOG_CALL (SK_FormatStringW (L"NvAPI_Disp_ColorControl (%lu, ...)", displayId).c_str ());
 
   return
@@ -553,6 +583,9 @@ __cdecl
 NvAPI_Disp_HdrColorControl_Override ( NvU32              displayId,
                                       NV_HDR_COLOR_DATA *pHdrColorData )
 {
+  std::lock_guard
+       lock (SK_NvAPI_Threading->locks.Disp_HdrColorControl);
+
   if (config.apis.NvAPI.disable_hdr)
     return NVAPI_LIBRARY_NOT_FOUND;
 
@@ -1088,6 +1121,11 @@ using NvAPI_QueryInterface_pfn = void* (*)(unsigned int ordinal);
 void*
 NvAPI_QueryInterface_Detour (unsigned int ordinal)
 {
+  std::lock_guard
+       lock (SK_NvAPI_Threading->locks.QueryInterface);
+
+//#define NVAPI_ORDINAL_TEST
+#ifdef NVAPI_ORDINAL_TEST
   static
     threadsafe_unordered_set <unsigned int>
       logged_ordinals;
@@ -1097,15 +1135,80 @@ NvAPI_QueryInterface_Detour (unsigned int ordinal)
     void* pAddr =
       NvAPI_QueryInterface_Original (ordinal);
 
-    dll_log->Log ( L"NvAPI Ordinal: %lu [%p]  --  %s", ordinal,
+    dll_log->Log ( L"[  NvAPI   ] NvAPI Ordinal: %lu [%p]  --  %s", ordinal,
                      pAddr, SK_SummarizeCaller ().c_str ()    );
 
     return
       pAddr;
   }
+#endif
 
   return
     NvAPI_QueryInterface_Original (ordinal);
+}
+
+NVAPI_INTERFACE
+SK_NvAPI_Disp_GetVRRInfo (__in NvU32 displayId, __inout NV_GET_VRR_INFO *pVrrInfo)
+{
+  std::lock_guard
+       lock (SK_NvAPI_Threading->locks.Disp_GetVRRInfo);
+
+  return
+    NvAPI_Disp_GetVRRInfo (displayId, pVrrInfo);
+}
+
+NVAPI_INTERFACE
+SK_NvAPI_DISP_GetAdaptiveSyncData (__in NvU32 displayId, __inout NV_GET_ADAPTIVE_SYNC_DATA *pAdaptiveSyncData)
+{
+  std::lock_guard
+       lock (SK_NvAPI_Threading->locks.DISP_GetAdaptiveSyncData);
+
+  return
+    NvAPI_DISP_GetAdaptiveSyncData (displayId, pAdaptiveSyncData);
+}
+
+NVAPI_INTERFACE
+SK_NvAPI_DISP_SetAdaptiveSyncData    (__in NvU32 displayId, __in NV_SET_ADAPTIVE_SYNC_DATA *pAdaptiveSyncData)
+{
+  std::lock_guard
+       lock (SK_NvAPI_Threading->locks.DISP_SetAdaptiveSyncData);
+
+  return
+    NvAPI_DISP_SetAdaptiveSyncData (displayId, pAdaptiveSyncData);
+}
+
+NVAPI_INTERFACE
+SK_NvAPI_DISP_GetMonitorCapabilities (__in NvU32 displayId, __inout NV_MONITOR_CAPABILITIES *pMonitorCapabilities)
+{
+  std::lock_guard
+       lock (SK_NvAPI_Threading->locks.DISP_GetMonitorCapabilities);
+
+  return
+    NvAPI_DISP_GetMonitorCapabilities (displayId, pMonitorCapabilities);
+}
+
+NVAPI_INTERFACE
+SK_NvAPI_D3D_IsGSyncCapable (__in IUnknown          *pDeviceOrContext,
+                             __in NVDX_ObjectHandle   primarySurface,
+                             __out BOOL             *pIsGsyncCapable)
+{
+  std::lock_guard
+       lock (SK_NvAPI_Threading->locks.D3D_IsGSyncCapable);
+
+  return
+    NvAPI_D3D_IsGSyncCapable (pDeviceOrContext, primarySurface, pIsGsyncCapable);
+}
+
+NVAPI_INTERFACE
+SK_NvAPI_D3D_IsGSyncActive (__in IUnknown          *pDeviceOrContext,
+                            __in NVDX_ObjectHandle   primarySurface,
+                           __out BOOL              *pIsGsyncActive)
+{
+  std::lock_guard
+       lock (SK_NvAPI_Threading->locks.D3D_IsGSyncActive);
+
+  return
+    NvAPI_D3D_IsGSyncActive (pDeviceOrContext, primarySurface, pIsGsyncActive);
 }
 
 
@@ -1195,6 +1298,9 @@ extern SK_LazyGlobal <SK_AppCache_Manager> app_cache_mgr;
 BOOL
 NVAPI::InitializeLibrary (const wchar_t* wszAppName)
 {
+    std::lock_guard
+         lock (SK_NvAPI_Threading->locks.Init);
+
   // It's silly to call this more than once, but not necessarily
   //  an error... just ignore repeated calls.
   if (bLibInit == TRUE)
@@ -1262,8 +1368,6 @@ NVAPI::InitializeLibrary (const wchar_t* wszAppName)
       (NvAPI_GPU_GetFBWidthAndLocation_pfn)NvAPI_QueryInterface (0x11104158u);
     NvAPI_GPU_GetPCIEInfo =
       (NvAPI_GPU_GetPCIEInfo_pfn)NvAPI_QueryInterface           (0xE3795199u);
-    NvAPI_GetPhysicalGPUFromGPUID =
-      (NvAPI_GetPhysicalGPUFromGPUID_pfn)NvAPI_QueryInterface   (0x5380AD1Au);
     NvAPI_GetGPUIDFromPhysicalGPU =
       (NvAPI_GetGPUIDFromPhysicalGPU_pfn)NvAPI_QueryInterface   (0x6533EA3Eu);
 
@@ -1326,10 +1430,13 @@ NVAPI::InitializeLibrary (const wchar_t* wszAppName)
     if (SK_IsAdmin ())
       SK_NvAPI_AllowGFEOverlay (false, L"SKIF", L"SKIF.exe");
 
-  // SK_CreateDLLHook2 ( L"nvapi64.dll",
-  //                      "nvapi_QueryInterface",
-  //                       NvAPI_QueryInterface_Detour,
-  //static_cast_p2p <void> (&NvAPI_QueryInterface_Original) );
+   SK_CreateDLLHook2 ( SK_RunLHIfBitness (64, L"nvapi64.dll",
+                                              L"nvapi.dll"),
+                        "nvapi_QueryInterface",
+                         NvAPI_QueryInterface_Detour,
+  static_cast_p2p <void> (&NvAPI_QueryInterface_Original) );
+
+   SK_ApplyQueuedHooks ();
 
 //#ifdef SK_AGGRESSIVE_HOOKS
 //      SK_ApplyQueuedHooks ();
@@ -1357,6 +1464,9 @@ NVAPI::InitializeLibrary (const wchar_t* wszAppName)
 
 bool SK_NvAPI_InitializeHDR (void)
 {
+  std::lock_guard
+       lock (SK_NvAPI_Threading->locks.Disp_GetHdrCapabilities);
+
   if (nv_hardware && NvAPI_Disp_GetHdrCapabilities_Original != nullptr)
   {
     NV_HDR_CAPABILITIES
@@ -1550,6 +1660,9 @@ SK_NvAPI_SetAntiAliasingOverride ( const wchar_t** pwszPropertyList )
   if (ret == NVAPI_EXECUTABLE_NOT_FOUND)
   {
     NVDRS_PROFILE custom_profile = { };
+
+    if (friendly_name.empty ()) // Avoid NVAPI failure: NVAPI_PROFILE_NAME_EMPTY
+        friendly_name = app_name;
 
     custom_profile.isPredefined  = FALSE;
     lstrcpyW ((wchar_t *)custom_profile.profileName, friendly_name.c_str ());
@@ -1979,6 +2092,9 @@ BOOL SK_NvAPI_GetVRREnablement (void)
   {
     NVDRS_PROFILE custom_profile = {   };
 
+    if (friendly_name.empty ()) // Avoid NVAPI failure: NVAPI_PROFILE_NAME_EMPTY
+        friendly_name = app_name;
+
     custom_profile.isPredefined  = FALSE;
     lstrcpyW ((wchar_t *)custom_profile.profileName, friendly_name.c_str ());
     custom_profile.version = NVDRS_PROFILE_VER;
@@ -2071,6 +2187,9 @@ BOOL SK_NvAPI_SetVRREnablement (BOOL bEnable)
   {
     NVDRS_PROFILE custom_profile = {   };
 
+    if (friendly_name.empty ()) // Avoid NVAPI failure: NVAPI_PROFILE_NAME_EMPTY
+        friendly_name = app_name;
+
     custom_profile.isPredefined  = FALSE;
     lstrcpyW ((wchar_t *)custom_profile.profileName, friendly_name.c_str ());
     custom_profile.version = NVDRS_PROFILE_VER;
@@ -2131,6 +2250,221 @@ BOOL SK_NvAPI_SetVRREnablement (BOOL bEnable)
   return bRet;
 }
 
+BOOL SK_NvAPI_EnableVulkanBridge (BOOL bEnable)
+{
+#define OGL_DX_PRESENT_DEBUG_ID       0x20324987
+#define DISABLE_FULLSCREEN_OPT        0x00000001
+#define ENABLE_RTX_REMIX              0x00080000
+
+#define OGL_DX_LAYERED_PRESENT_ID     0x20D690F8
+#define OGL_DX_LAYERED_PRESENT_AUTO   0x00000000
+#define OGL_DX_LAYERED_PRESENT_DXGI   0x00000001
+#define OGL_DX_LAYERED_PRESENT_NATIVE 0x00000002
+
+  if (! nv_hardware)
+    return -2;
+
+  NvAPI_Status       ret       = NVAPI_ERROR;
+  NvDRSSessionHandle hSession  = { };
+
+  NVAPI_CALL (DRS_CreateSession (&hSession));
+  NVAPI_CALL (DRS_LoadSettings  ( hSession));
+
+               NvDRSProfileHandle hProfile       = { };
+  std::unique_ptr    <NVDRS_APPLICATION> app_ptr =
+    std::make_unique <NVDRS_APPLICATION> ();
+  NVDRS_APPLICATION&                     app     =
+                                        *app_ptr;
+
+  NVAPI_SILENT ();
+
+  app.version = NVDRS_APPLICATION_VER;
+  ret         = NVAPI_ERROR;
+
+  NVAPI_CALL2 ( DRS_FindApplicationByName ( hSession,
+                                              (NvU16 *)app_name.c_str (),
+                                                &hProfile,
+                                                  &app ),
+                ret );
+
+  if (ret != NVAPI_OK && ret != NVAPI_EXECUTABLE_NOT_FOUND)
+    SK_MessageBox (SK_FormatStringW (L"FindApplicationByName Returned %d", ret), L"NVAPI Debug", MB_OK);
+
+  // If no executable exists anywhere by this name, create a profile for it
+  //   and then add the executable to it.
+  if (ret == NVAPI_EXECUTABLE_NOT_FOUND)
+  {
+    NVDRS_PROFILE custom_profile = {   };
+
+    if (friendly_name.empty ()) // Avoid NVAPI failure: NVAPI_PROFILE_NAME_EMPTY
+        friendly_name = app_name;
+
+    custom_profile.isPredefined  = FALSE;
+    lstrcpyW ((wchar_t *)custom_profile.profileName, friendly_name.c_str ());
+    custom_profile.version = NVDRS_PROFILE_VER;
+
+    // It's not necessarily wrong if this does not return NVAPI_OK, so don't
+    //   raise a fuss if it happens.
+    NVAPI_SILENT ()
+    {
+      NVAPI_CALL2 (DRS_CreateProfile (hSession, &custom_profile, &hProfile), ret);
+
+      if (ret != NVAPI_OK && ret != NVAPI_PROFILE_NAME_IN_USE)
+        SK_MessageBox (SK_FormatStringW (L"CreateProfile Returned %d", ret), L"NVAPI Debug", MB_OK);
+    }
+    NVAPI_VERBOSE ()
+
+    // Add the application name to the profile, if a profile already exists
+    if (ret == NVAPI_PROFILE_NAME_IN_USE)
+    {
+      NVAPI_CALL2 ( DRS_FindProfileByName ( hSession,
+                                              (NvU16 *)friendly_name.c_str (),
+                                                &hProfile),
+                      ret );
+    }
+
+    if (ret != NVAPI_OK)
+        SK_MessageBox (SK_FormatStringW (L"DRS_FindProfileByName (2) Returned %d", ret), L"NVAPI Debug", MB_OK);
+
+    if (ret == NVAPI_OK)
+    {
+      RtlSecureZeroMemory (app_ptr.get (), sizeof NVDRS_APPLICATION);
+
+      lstrcpyW ((wchar_t *)app.appName,          app_name.c_str      ());
+      lstrcpyW ((wchar_t *)app.userFriendlyName, friendly_name.c_str ());
+
+      app.version      = NVDRS_APPLICATION_VER;
+      app.isPredefined = FALSE;
+      app.isMetro      = FALSE;
+
+      NVAPI_CALL2 (DRS_CreateApplication (hSession, hProfile, &app), ret);
+      NVAPI_CALL2 (DRS_SaveSettings      (hSession),                 ret);
+    }
+  }
+
+  bool bRestartRequired = false;
+
+  if (config.apis.d3d9.hook != !bEnable)
+  {
+    // Turn these off if using DXGI layered present
+    config.apis.d3d9.hook   = !bEnable;
+    config.apis.d3d9ex.hook = !bEnable;
+
+    SK_SaveConfig ();
+
+    bRestartRequired = true;
+  }
+
+  NVDRS_SETTING ogl_dx_present_debug_val         = {               };
+                ogl_dx_present_debug_val.version = NVDRS_SETTING_VER;
+
+  NVDRS_SETTING ogl_dx_present_layer_val         = {               };
+                ogl_dx_present_layer_val.version = NVDRS_SETTING_VER;
+
+  // These settings may not exist, and getting back a value of 0 is okay...
+  NVAPI_SILENT  ();
+  NVAPI_CALL    (DRS_GetSetting (hSession, hProfile, OGL_DX_PRESENT_DEBUG_ID,   &ogl_dx_present_debug_val));
+  NVAPI_CALL    (DRS_GetSetting (hSession, hProfile, OGL_DX_LAYERED_PRESENT_ID, &ogl_dx_present_layer_val));
+
+  DWORD dwLayeredPresent =
+    bEnable ? OGL_DX_LAYERED_PRESENT_DXGI
+            : OGL_DX_LAYERED_PRESENT_NATIVE;
+
+  if (ogl_dx_present_layer_val.u32CurrentValue != dwLayeredPresent)
+  {
+    NVAPI_SET_DWORD (ogl_dx_present_layer_val,         OGL_DX_LAYERED_PRESENT_ID, dwLayeredPresent);
+    NVAPI_CALL    (DRS_SetSetting (hSession, hProfile, &ogl_dx_present_layer_val));
+
+    bRestartRequired = true;
+  }
+
+  if (! SK_IsAdmin ())
+  {
+    if (bEnable)
+    {
+      if ((ogl_dx_present_debug_val.u32CurrentValue & (DISABLE_FULLSCREEN_OPT | ENABLE_RTX_REMIX))
+                                                   != (DISABLE_FULLSCREEN_OPT | ENABLE_RTX_REMIX))
+      {
+        NVAPI_CALL (DRS_SaveSettings   (hSession));
+        NVAPI_CALL (DRS_DestroySession (hSession));
+
+        std::wstring wszCommand =
+          SK_FormatStringW (
+            L"rundll32.exe \"%ws\", RunDLL_NvAPI_SetDWORD %x %x %ws",
+              SK_GetModuleFullName (SK_GetDLL ()).c_str (),
+                OGL_DX_PRESENT_DEBUG_ID, ogl_dx_present_debug_val.u32CurrentValue | DISABLE_FULLSCREEN_OPT | ENABLE_RTX_REMIX,
+                  app_name.c_str ()
+                  
+          );
+
+        if ( IDOK ==
+               SK_MessageBox ( L"Special K's Vulkan Bridge Will Be Enabled\r\n\r\tA game restart is required.",
+                               L"NVIDIA Vulkan/DXGI Layer Setup", MB_OKCANCEL | MB_ICONINFORMATION )
+           )
+        {
+          SK_ElevateToAdmin (wszCommand.c_str ());
+          bRestartRequired = true;
+        }
+
+        else
+          return FALSE;
+      }
+    }
+
+    else
+    {
+      if ((ogl_dx_present_debug_val.u32CurrentValue & ENABLE_RTX_REMIX)
+                                                   == ENABLE_RTX_REMIX)
+      {
+        NVAPI_CALL (DRS_SaveSettings   (hSession));
+        NVAPI_CALL (DRS_DestroySession (hSession));
+
+        std::wstring wszCommand =
+          SK_FormatStringW (
+            L"rundll32.exe \"%ws\", RunDLL_NvAPI_SetDWORD %x %x %ws",
+              SK_GetModuleFullName (SK_GetDLL ()).c_str (),
+                OGL_DX_PRESENT_DEBUG_ID, ogl_dx_present_debug_val.u32CurrentValue & ~ENABLE_RTX_REMIX,
+                  app_name.c_str ()
+                  
+          );
+
+        if ( IDOK ==
+               SK_MessageBox ( L"Special K's Vulkan Bridge Will Be Disabled\r\n\r\tA game restart is required.",
+                               L"NVIDIA Vulkan/DXGI Layer Setup", MB_OKCANCEL | MB_ICONINFORMATION )
+           )
+        {
+          SK_ElevateToAdmin (wszCommand.c_str ());
+          bRestartRequired = true;
+        }
+
+        else
+          return TRUE;
+      }
+    }
+  }
+
+  // Highly unlikely that we'll ever reach this point... don't run games as admin! :P
+  if (SK_IsAdmin ())
+  {
+    NVAPI_SET_DWORD (ogl_dx_present_debug_val,         OGL_DX_PRESENT_DEBUG_ID,
+                                             bEnable ? ogl_dx_present_debug_val.u32CurrentValue |
+                                                        DISABLE_FULLSCREEN_OPT |
+                                                        ENABLE_RTX_REMIX
+                                                     : ogl_dx_present_debug_val.u32CurrentValue &
+                                                      (~ENABLE_RTX_REMIX));
+    NVAPI_CALL   (DRS_SetSetting (hSession, hProfile, &ogl_dx_present_debug_val));
+  }
+  NVAPI_VERBOSE ();
+
+  NVAPI_CALL (DRS_SaveSettings   (hSession));
+  NVAPI_CALL (DRS_DestroySession (hSession));
+
+  if (bRestartRequired)
+    SK_RestartGame ();
+
+  return true;
+}
+
 BOOL SK_NvAPI_GetFastSync (void)
 {
   if (! nv_hardware)
@@ -2164,6 +2498,9 @@ BOOL SK_NvAPI_GetFastSync (void)
   if (ret == NVAPI_EXECUTABLE_NOT_FOUND)
   {
     NVDRS_PROFILE custom_profile = {   };
+
+    if (friendly_name.empty ()) // Avoid NVAPI failure: NVAPI_PROFILE_NAME_EMPTY
+        friendly_name = app_name;
 
     custom_profile.isPredefined  = FALSE;
     lstrcpyW ((wchar_t *)custom_profile.profileName, friendly_name.c_str ());
@@ -2254,6 +2591,9 @@ BOOL SK_NvAPI_SetFastSync (BOOL bEnable)
   if (ret == NVAPI_EXECUTABLE_NOT_FOUND)
   {
     NVDRS_PROFILE custom_profile = {   };
+
+    if (friendly_name.empty ()) // Avoid NVAPI failure: NVAPI_PROFILE_NAME_EMPTY
+        friendly_name = app_name;
 
     custom_profile.isPredefined  = FALSE;
     lstrcpyW ((wchar_t *)custom_profile.profileName, friendly_name.c_str ());
@@ -2350,6 +2690,9 @@ BOOL SK_NvAPI_AllowGFEOverlay (bool bAllow, wchar_t *wszAppName, wchar_t *wszExe
   {
     NVDRS_PROFILE custom_profile = {   };
 
+    if (friendly_name.empty ()) // Avoid NVAPI failure: NVAPI_PROFILE_NAME_EMPTY
+        friendly_name = app_name;
+
     custom_profile.isPredefined  = FALSE;
     lstrcpyW ((wchar_t *)custom_profile.profileName, wszAppName);
     custom_profile.version = NVDRS_PROFILE_VER;
@@ -2416,8 +2759,197 @@ BOOL SK_NvAPI_AllowGFEOverlay (bool bAllow, wchar_t *wszAppName, wchar_t *wszExe
 
 void
 CALLBACK
+RunDLL_RestartNVIDIADriver ( HWND   hwnd,        HINSTANCE hInst,
+                             LPCSTR lpszCmdLine, int       nCmdShow )
+{
+  UNREFERENCED_PARAMETER (hInst);
+  UNREFERENCED_PARAMETER (hwnd);
+  UNREFERENCED_PARAMETER (nCmdShow);
+
+  if (SK_IsAdmin ())
+  {
+#ifndef _WIN64
+    HMODULE hLib = SK_Modules->LoadLibraryLL (L"nvapi.dll");
+#else
+    HMODULE hLib = SK_Modules->LoadLibraryLL (L"nvapi64.dll");
+#endif
+
+#define __NvAPI_RestartDisplayDriver                      0xB4B26B65
+    typedef void* (*NvAPI_QueryInterface_pfn)(unsigned int offset);
+    typedef NvAPI_Status(__cdecl *NvAPI_RestartDisplayDriver_pfn)(void);
+    NvAPI_QueryInterface_pfn          NvAPI_QueryInterface       =
+      (NvAPI_QueryInterface_pfn)SK_GetProcAddress (hLib, "nvapi_QueryInterface");
+    NvAPI_RestartDisplayDriver_pfn NvAPI_RestartDisplayDriver =
+      (NvAPI_RestartDisplayDriver_pfn)NvAPI_QueryInterface (__NvAPI_RestartDisplayDriver);
+
+    if (NvAPI_RestartDisplayDriver != nullptr)
+        NvAPI_RestartDisplayDriver ();
+  }
+  
+  else
+  {
+    if (! StrStrIA (lpszCmdLine, "silent"))
+    {
+      MessageBox (
+        NULL, L"This command must be run as admin.",
+           L"Restart NVIDIA Driver Failed", MB_OK
+      );
+    }
+  }
+}
+
+void
+CALLBACK
+RunDLL_NvAPI_SetDWORD ( HWND   hwnd,        HINSTANCE hInst,
+                        LPCSTR lpszCmdLine, int       nCmdShow )
+{
+  UNREFERENCED_PARAMETER (hInst);
+  UNREFERENCED_PARAMETER (hwnd);
+  UNREFERENCED_PARAMETER (nCmdShow);
+
+  char  szExecutable [MAX_PATH + 2] = { };
+  DWORD dwSettingID                 = 0x0,
+        dwSettingVal                = 0x0;
+
+  int vals =
+    sscanf (
+      lpszCmdLine, "%x %x ",
+        &dwSettingID, &dwSettingVal
+    );
+
+  if (vals != 2)
+  {
+    printf ("Arguments: <HexID> <HexValue> <ExecutableName.exe>");
+    return;
+  }
+
+  // sscanf doesn't like strings with spaces, so we'll do it ourself :)
+  strncpy ( szExecutable,
+    StrStrIA (StrStrIA (lpszCmdLine, " ") + 1,
+                                     " ") + 1, MAX_PATH );
+
+  std::wstring executable_name =
+    SK_UTF8ToWideChar (szExecutable);
+
+  if (NVAPI::InitializeLibrary (executable_name.c_str ()))
+  {
+    app_name      = executable_name;
+    friendly_name = executable_name;
+
+    NvAPI_Status       ret       = NVAPI_ERROR;
+    NvDRSSessionHandle hSession  = { };
+
+    NVAPI_CALL (DRS_CreateSession (&hSession));
+    NVAPI_CALL (DRS_LoadSettings  ( hSession));
+
+                 NvDRSProfileHandle hProfile       = { };
+    std::unique_ptr    <NVDRS_APPLICATION> app_ptr =
+      std::make_unique <NVDRS_APPLICATION> ();
+    NVDRS_APPLICATION&                     app     =
+                                          *app_ptr;
+
+    NVAPI_SILENT ();
+
+    app.version = NVDRS_APPLICATION_VER;
+    ret         = NVAPI_ERROR;
+
+    NVAPI_CALL2 ( DRS_FindApplicationByName ( hSession,
+                                                (NvU16 *)app_name.c_str (),
+                                                  &hProfile,
+                                                    &app ),
+                  ret );
+
+    // If no executable exists anywhere by this name, create a profile for it
+    //   and then add the executable to it.
+    if (ret == NVAPI_EXECUTABLE_NOT_FOUND)
+    {
+      if ( IDYES == SK_MessageBox (
+                  SK_FormatStringW ( L"Create New Driver Profile for \"%ws\"?",
+                                       app_name.c_str ()
+                                   ).c_str (),
+                                     L"NVIDIA Driver Profile Does Not Exist",
+                         MB_YESNO | MB_ICONQUESTION )
+         )
+      {
+        NVDRS_PROFILE custom_profile = {   };
+
+        if (friendly_name.empty ()) // Avoid NVAPI failure: NVAPI_PROFILE_NAME_EMPTY
+            friendly_name = app_name;
+
+        custom_profile.isPredefined  = FALSE;
+        lstrcpyW ((wchar_t *)custom_profile.profileName, friendly_name.c_str ());
+        custom_profile.version = NVDRS_PROFILE_VER;
+
+        // It's not necessarily wrong if this does not return NVAPI_OK, so don't
+        //   raise a fuss if it happens.
+        NVAPI_SILENT ()
+        {
+          NVAPI_CALL2 (DRS_CreateProfile (hSession, &custom_profile, &hProfile), ret);
+        }
+        NVAPI_VERBOSE ()
+
+        // Add the application name to the profile, if a profile already exists
+        if (ret == NVAPI_PROFILE_NAME_IN_USE)
+        {
+          NVAPI_CALL2 ( DRS_FindProfileByName ( hSession,
+                                                  (NvU16 *)friendly_name.c_str (),
+                                                    &hProfile),
+                          ret );
+        }
+
+        if (ret == NVAPI_OK)
+        {
+          RtlSecureZeroMemory (app_ptr.get (), sizeof NVDRS_APPLICATION);
+
+          lstrcpyW ((wchar_t *)app.appName,          app_name.c_str      ());
+          lstrcpyW ((wchar_t *)app.userFriendlyName, friendly_name.c_str ());
+
+          app.version      = NVDRS_APPLICATION_VER;
+          app.isPredefined = FALSE;
+          app.isMetro      = FALSE;
+
+          NVAPI_CALL2 (DRS_CreateApplication (hSession, hProfile, &app), ret);
+          NVAPI_CALL2 (DRS_SaveSettings      (hSession), ret);
+        }
+      }
+
+      else
+        return;
+    }
+
+    if (ret == NVAPI_OK)
+    {
+      NVDRS_SETTING setting         = {               };
+                    setting.version = NVDRS_SETTING_VER;
+
+      NVAPI_CALL    (DRS_GetSetting   (hSession, hProfile, dwSettingID, &setting));
+      NVAPI_SET_DWORD (setting,                            dwSettingID, dwSettingVal);
+      NVAPI_CALL    (DRS_SetSetting   (hSession, hProfile,              &setting));
+
+      if (ret != NVAPI_OK)
+      {
+        printf ("NvAPI_DRS_SetSetting (...) Failed: %x", ret);
+      }
+
+      NVAPI_CALL    (DRS_SaveSettings (hSession));
+    }
+
+    else
+    {
+      printf ("Unable to find Application Profile for %ws", app_name.c_str ());
+    }
+
+    NVAPI_CALL (DRS_DestroySession (hSession));
+  }
+
+  else
+    printf ("NVAPI Failed to Initialize!");
+}
+
+void
+CALLBACK
 RunDLL_DisableGFEForSKIF ( HWND   hwnd,        HINSTANCE hInst,
-                          LPCSTR lpszCmdLine, int       nCmdShow )
+                           LPCSTR lpszCmdLine, int       nCmdShow )
 {
   UNREFERENCED_PARAMETER (hInst);
   UNREFERENCED_PARAMETER (hwnd);
@@ -2491,6 +3023,9 @@ SK_NvAPI_GetAnselEnablement (DLL_ROLE role)
   if (ret == NVAPI_EXECUTABLE_NOT_FOUND)
   {
     NVDRS_PROFILE custom_profile = {   };
+
+    if (friendly_name.empty ()) // Avoid NVAPI failure: NVAPI_PROFILE_NAME_EMPTY
+        friendly_name = app_name;
 
     custom_profile.isPredefined  = FALSE;
     lstrcpyW ((wchar_t *)custom_profile.profileName, friendly_name.c_str ());
@@ -2617,6 +3152,9 @@ SK_NvAPI_SetAnselEnablement (DLL_ROLE role, bool enabled)
   if (ret == NVAPI_EXECUTABLE_NOT_FOUND)
   {
     NVDRS_PROFILE custom_profile = {   };
+
+    if (friendly_name.empty ()) // Avoid NVAPI failure: NVAPI_PROFILE_NAME_EMPTY
+        friendly_name = app_name;
 
     custom_profile.isPredefined  = FALSE;
     lstrcpyW ((wchar_t *)custom_profile.profileName, friendly_name.c_str ());
@@ -2849,6 +3387,9 @@ sk::NVAPI::SetSLIOverride    (       DLL_ROLE role,
   {
     NVDRS_PROFILE custom_profile = { };
 
+    if (friendly_name.empty ()) // Avoid NVAPI failure: NVAPI_PROFILE_NAME_EMPTY
+        friendly_name = app_name;
+
     custom_profile.isPredefined = FALSE;
     lstrcpyW ((wchar_t *)custom_profile.profileName, friendly_name.c_str ());
     custom_profile.version = NVDRS_PROFILE_VER;
@@ -3040,6 +3581,9 @@ SK_NvAPI_AddLauncherToProf (void)
   {
     NVDRS_PROFILE custom_profile = { };
     custom_profile.isPredefined  = FALSE;
+
+    if (friendly_name.empty ()) // Avoid NVAPI failure: NVAPI_PROFILE_NAME_EMPTY
+        friendly_name = app_name;
 
     lstrcpyW (
       (wchar_t *)custom_profile.profileName,

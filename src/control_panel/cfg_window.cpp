@@ -57,10 +57,14 @@ SK::ControlPanel::Window::Draw (void)
       {
         if (! config.window.fullscreen)
         {
+          ImGui::BeginTooltip ();
           if (borderless)
-            ImGui::SetTooltip ("Add/Restore Window Borders");
+            ImGui::TextUnformatted ("Add/Restore Window Borders");
           else
-            ImGui::SetTooltip ("Remove Window Borders");
+            ImGui::TextUnformatted ("Remove Window Borders");
+          ImGui::Separator  ();
+          ImGui::BulletText ("Game needs to be set to its Regular Windowed mode for these overrides to work correctly.");
+          ImGui::EndTooltip ();
         }
 
         else
@@ -353,7 +357,7 @@ SK::ControlPanel::Window::Draw (void)
       if (ImGui::IsItemHovered ())
       {
         ImGui::BeginTooltip ();
-        ImGui::Text         ("Intelligently Raises and Lowers the Game Windows for Optimum Multitasking");
+        ImGui::Text         ("Intelligently Raises and Lowers the Game Window for Optimum Multitasking");
         ImGui::Separator    ();
         ImGui::BulletText   ("Improves framepacing when KB&M input is given to other applications");
         ImGui::BulletText   ("Enables G-Sync / FreeSync / VRR in overlapping multi-monitor scenarios");

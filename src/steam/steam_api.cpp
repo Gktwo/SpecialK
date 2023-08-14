@@ -895,7 +895,7 @@ void
 SK_Steam_ScreenshotManager::init (void) noexcept
 {
   __try {
-    SK_GetCurrentRenderBackend ().screenshot_mgr.getRepoStats (true);
+    SK_GetCurrentRenderBackend ().screenshot_mgr->getRepoStats (true);
 
     auto pScreenshots =
       steam_ctx.Screenshots ();
@@ -956,8 +956,6 @@ public:
       // Deactivating, but we might want to hide this event from the game...
       if (pParam->m_bActive == 0)
       {
-        extern bool SK_ImGui_Visible;
-
         // Undo the event the game is about to receive.
         if (SK_ImGui_Visible) SK::SteamAPI::SetOverlayState (true);
       }
@@ -1992,7 +1990,7 @@ public:
 #if 1
     for (auto& it : *UserStatsReceived_callbacks)
     {
-      if (it.second && SK_IsAddressExecutable (it.first, true))
+      if (it.second)
       {
         auto override_params =
           *pParam;
@@ -2796,7 +2794,7 @@ SK_Steam_ShouldThrottleCallbacks (void)
 
     if ( limit == 0 ||
       ( SK_CurrentPerf ().QuadPart - liLastCallbacked.QuadPart  <
-                        SK_QpcFreq / limit ) )
+                        SK_PerfFreq / limit ) )
     {
       InterlockedDecrement64 ( &SK_SteamAPI_CallbackRunCount );
       return true;
@@ -5261,22 +5259,35 @@ SK_SteamAPIContext::OnFileDetailsDone ( FileDetailsResult_t* pParam,
 void
 SK_Steam_ForceInputAppId (AppId64_t appid)
 {
-  static volatile LONG changes = 0;
-
-  if ( ReadAcquire (&__SK_DLL_Ending) &&
-       ReadAcquire (&changes) > 1 ) // First change is always to 0
-  {
-    // Cleanup on unexpected application termination
-    //
-    SK_ShellExecuteA ( 0, "OPEN",
-              R"(steam://forceinputappid/0)", nullptr, nullptr,
-                    SW_HIDE );
-
+  if (config.platform.silent)
     return;
-  }
 
-  if (config.steam.appid != 0)
+  //
+  // SteamOS has a ton of input problems to begin with, let's just let the platform
+  //   stay broken.
+  // 
+  //   Using control panel in SteamInput-native games will cause undefined
+  //     behavior on Linux, but the Steam client will be less broken.
+  //
+  if (config.compatibility.using_wine)
+    return;
+
+  if (config.steam.appid > 0)
   {
+    static volatile LONG changes = 0;
+
+    if ( ReadAcquire (&__SK_DLL_Ending) &&
+         ReadAcquire (&changes) > 1 ) // First change is always to 0
+    {
+      // Cleanup on unexpected application termination
+      //
+      SK_ShellExecuteA ( 0, "OPEN",
+                R"(steam://forceinputappid/0)", nullptr, nullptr,
+                      SW_HIDE );
+    
+      return;
+    }
+
     struct {
       concurrency::concurrent_queue <AppId64_t> app_ids;
       SK_AutoHandle                             signal =
@@ -5742,8 +5753,8 @@ SK_SteamAPIContext::InitSteamAPI (HMODULE hSteamDLL)
   {
     steam_log->Log (L" SteamClient (...) Failed?!");
     return false;
-  } else
-    client_->SetWarningMessageHook ( &SK_SteamAPI_DebugText );
+  } //else
+    //client_->SetWarningMessageHook ( &SK_SteamAPI_DebugText );
 
 
   hSteamPipe = SteamAPI_GetHSteamPipe ();
@@ -5945,6 +5956,15 @@ SK_SteamAPIContext::InitSteamAPI (HMODULE hSteamDLL)
 
     steam_log->Log ( L" >> ISteamScreenshots NOT FOUND for version %hs <<",
                       "STEAMSCREENSHOTS_INTERFACE_VERSION001" );
+
+    steam_log->Log ( L" ** DLL is too old, disabling SteamAPI integration!");
+
+    config.platform.silent = true;
+
+    SK_SaveConfig  ();
+    SK_RestartGame ();
+
+    return false;
   }
 
   // This crashes Dark Souls 3, so... do this

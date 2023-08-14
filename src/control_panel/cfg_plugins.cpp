@@ -236,6 +236,7 @@ SK::ControlPanel::PlugIns::Draw (void)
     ImGui::PopStyleColor ( 3);
 
     if (SK_IsInjected () || StrStrIW (SK_GetModuleName (SK_GetDLL ()).c_str (), L"dxgi.dll")     ||
+                            StrStrIW(SK_GetModuleName(SK_GetDLL()).c_str(), L"injection.dll") ||
                             StrStrIW (SK_GetModuleName (SK_GetDLL ()).c_str (), L"d3d11.dll")    ||
                             StrStrIW (SK_GetModuleName (SK_GetDLL ()).c_str (), L"d3d9.dll")     ||
                             StrStrIW (SK_GetModuleName (SK_GetDLL ()).c_str (), L"OpenGL32.dll") ||

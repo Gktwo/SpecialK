@@ -38,6 +38,11 @@ public:
     setAutoFit (true).setDockingPoint (DockAnchor::West);
   };
 
+  void load (iSK_INI* cfg) noexcept override
+  {
+    SK_Widget::load (cfg);
+  }
+
   void run (void) override
   {
     if (! ( static_cast <int> (SK_GetCurrentRenderBackend ().api) &
@@ -46,6 +51,18 @@ public:
       setActive (false);
       return;
     }
+
+    SK_RunOnce (
+    {
+      setMinSize (
+        ImVec2 (std::max (875.0f, getMinSize ().x),
+                std::max (200.0f, getMinSize ().y))
+      ).
+      setMaxSize (
+        ImVec2 (std::max (875.0f, getMaxSize ().x),
+                std::max (200.0f, getMaxSize ().y))
+      );
+    });
 
     if (last_update < SK::ControlPanel::current_time - update_freq)
     {

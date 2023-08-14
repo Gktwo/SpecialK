@@ -1215,6 +1215,21 @@ GetModuleLoadCount (HMODULE hDll)
   return 0;
 } //GetModuleLoadCount
 
+void
+SK_FreeLibraryAndExitThread (HMODULE hModToFree, DWORD dwExitCode)
+{
+  __try
+  {
+    FreeLibraryAndExitThread (hModToFree, dwExitCode);
+  }
+
+  __except (EXCEPTION_EXECUTE_HANDLER)
+  {
+    if (IsDebuggerPresent ())
+      __debugbreak ();
+  }
+}
+
          HANDLE   g_hPacifierThread = SK_INVALID_HANDLE;
 volatile HMODULE  g_hModule_CBT     = 0;
 volatile LONG     g_sOnce           = 0;
@@ -1313,6 +1328,7 @@ SK_Inject_SpawnUnloadListener (void)
               // List of processes that acquire multiple DLL references
               for ( auto& dll : { L"notepad.exe",
                                   L"mspaint.exe",
+                                  L"msedgewebview2.exe",
                                   L"epicwebhelper.exe",
                                   L"steamwebhelper.exe" } )
               {
@@ -1322,7 +1338,7 @@ SK_Inject_SpawnUnloadListener (void)
                   if (GetModuleReferenceCount (g_hModule_CBT) == 1 &&
                            GetModuleLoadCount (g_hModule_CBT) > 1)
                   {
-                    FreeLibrary (g_hModule_CBT);
+                    SK_FreeLibrary (g_hModule_CBT);
                   }
 
                   break;
@@ -1330,6 +1346,8 @@ SK_Inject_SpawnUnloadListener (void)
               }
             }
           }
+
+          hHookTeardown.Close ();
 
           // All clear, one less process to worry about
           InterlockedDecrement  (&injected_procs);
@@ -1340,7 +1358,7 @@ SK_Inject_SpawnUnloadListener (void)
 
         InterlockedExchangePointer ((void **)&g_hModule_CBT, nullptr);
 
-        FreeLibraryAndExitThread (this_module, 0x0);
+        SK_FreeLibraryAndExitThread (this_module, 0x0);
 
         return 0;
       }, nullptr, CREATE_SUSPENDED, nullptr
@@ -1728,22 +1746,21 @@ SK_Inject_EnableCentralizedConfig (void)
 
 #ifndef _M_AMD64
   case SK_RenderAPI::D3D8On11:
+  case SK_RenderAPI::D3D8On12:
     SK_SaveConfig (L"d3d8");
     break;
 
   case SK_RenderAPI::DDrawOn11:
+  case SK_RenderAPI::DDrawOn12:
     SK_SaveConfig (L"ddraw");
     break;
 #endif
 
     case SK_RenderAPI::D3D10:
     case SK_RenderAPI::D3D11:
-#ifdef _M_AMD64
     case SK_RenderAPI::D3D12:
-#endif
-    {
       SK_SaveConfig (L"dxgi");
-    } break;
+      break;
 
     case SK_RenderAPI::OpenGL:
       SK_SaveConfig (L"OpenGL32");
@@ -1921,22 +1938,21 @@ SK_Inject_SwitchToRenderWrapper (void)
 
 #ifndef _M_AMD64
     case SK_RenderAPI::D3D8On11:
+    case SK_RenderAPI::D3D8On12:
       lstrcatW (wszOut, L"\\d3d8.dll");
       break;
 
     case SK_RenderAPI::DDrawOn11:
+    case SK_RenderAPI::DDrawOn12:
       lstrcatW (wszOut, L"\\ddraw.dll");
       break;
 #endif
 
     case SK_RenderAPI::D3D10:
     case SK_RenderAPI::D3D11:
-#ifdef _M_AMD64
     case SK_RenderAPI::D3D12:
-#endif
-    {
       lstrcatW (wszOut, L"\\dxgi.dll");
-    } break;
+      break;
 
     case SK_RenderAPI::OpenGL:
       lstrcatW (wszOut, L"\\OpenGL32.dll");
@@ -2528,16 +2544,6 @@ SK_Inject_TestUserBlacklist (const wchar_t* wszExecutable)
 bool
 SK_Inject_TestBlacklists (const wchar_t* wszExecutable)
 {
-  ////wchar_t    wszExecutableCopy [MAX_PATH] = { };
-  ////wcsncpy_s (wszExecutableCopy, MAX_PATH,
-  ////           wszExecutable,     _TRUNCATE );
-
-  //// This rule would prevent 'Book of Demons' from working
-  //
-  //PathStripPath (wszExecutableCopy);
-  //if (StrStrNIW (wszExecutableCopy, L"launcher", MAX_PATH) != nullptr)
-  //  return true;
-
   return
     SK_Inject_TestUserBlacklist (wszExecutable);
 }
@@ -2556,13 +2562,52 @@ void SK_Inject_SuppressExitNotify (void)
   __SKIF_SuppressExitNotify = true;
 }
 
-void SK_Inject_BroadcastExitNotify (void)
+void SK_Inject_WakeUpSKIF (void)
 {
-  if (! (SK_GetFramesDrawn () > 0 && SK_IsInjected ()))
-    return;
+  HWND hWndExisting =
+        FindWindow (L"SK_Injection_Frontend", nullptr);
 
-  if (__SKIF_SuppressExitNotify)
-    return;
+  if (hWndExisting != nullptr && IsWindow (hWndExisting))
+  {
+    DWORD                                    dwPid = 0x0;
+    GetWindowThreadProcessId (hWndExisting, &dwPid);
+  
+    if ( dwPid != 0x0 &&
+         dwPid != GetCurrentProcessId () )
+    {
+      PostMessage              (hWndExisting, WM_NULL, 0x0, 0x0);
+      AllowSetForegroundWindow (dwPid);
+    }
+  }
+}
+
+void SK_Inject_BroadcastExitNotify (bool force)
+{
+  if (! force)
+  {
+    if (__SKIF_SuppressExitNotify || SK_GetFramesDrawn () == 0)
+      return;
+  }
+
+  // A new signal (23.6.28+) that is broadcast even for local injection
+  SK_AutoHandle hInjectExitAckEx (
+    OpenEvent ( EVENT_ALL_ACCESS, FALSE,
+               LR"(Local\SKIF_InjectExitAckEx)" )
+  );
+
+  if (hInjectExitAckEx.isValid ())
+  {
+    SetEvent (hInjectExitAckEx.m_h);
+  }
+
+  SK_Inject_WakeUpSKIF ();
+
+  if (! force)
+  {
+    // The signal below is only for global injection
+    if (! SK_IsInjected ())
+      return;
+  }
 
   SK_AutoHandle hInjectExitAck (
     OpenEvent ( EVENT_ALL_ACCESS, FALSE,
@@ -2575,10 +2620,27 @@ void SK_Inject_BroadcastExitNotify (void)
   }
 }
 
-void SK_Inject_BroadcastInjectionNotify (void)
+void SK_Inject_BroadcastInjectionNotify (bool force)
 {
-  if (! SK_IsInjected ())
-    return;
+  // A new signal (23.6.28+) that is broadcast even for local injection
+  SK_AutoHandle hInjectAckEx (
+    OpenEvent ( EVENT_ALL_ACCESS, FALSE,
+               LR"(Local\SKIF_InjectAckEx)" )
+  );
+
+  if (hInjectAckEx.isValid ())
+  {
+    SetEvent (hInjectAckEx.m_h);
+  }
+
+  SK_Inject_WakeUpSKIF ();
+
+  if (! force)
+  {
+    // The original signal below denotes successful global injection
+    if (! SK_IsInjected ())
+      return;
+  }
 
   SK_AutoHandle hInjectAck (
     OpenEvent ( EVENT_ALL_ACCESS, FALSE,

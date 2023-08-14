@@ -602,16 +602,22 @@ SK_Yakuza0_PlugInInit (void)
       shaders.pixel.addTrackingRef  (shaders.pixel.blacklist,  0x170885b9);
       shaders.pixel.addTrackingRef  (shaders.pixel.blacklist,  0x4d2973a3);
       shaders.pixel.addTrackingRef  (shaders.pixel.blacklist,  0x5256777a);
-      shaders.pixel.addTrackingRef  (shaders.pixel.blacklist,  0x69b8ef91); }
+      shaders.pixel.addTrackingRef  (shaders.pixel.blacklist,  0x69b8ef91);
+      InterlockedIncrement (&SK_D3D11_DrawTrackingReqs);
+    }
 
     if (_SK_Y0_Cfg.no_dof)
     { shaders.vertex.addTrackingRef (shaders.vertex.blacklist, SK_Y0_DOF_VS_CRC32C);
       shaders.pixel.addTrackingRef  (shaders.pixel.blacklist,  SK_Y0_DOF_PS0_CRC32C);
-      shaders.pixel.addTrackingRef  (shaders.pixel.blacklist,  SK_Y0_DOF_PS1_CRC32C); }
+      shaders.pixel.addTrackingRef  (shaders.pixel.blacklist,  SK_Y0_DOF_PS1_CRC32C);
+      InterlockedIncrement (&SK_D3D11_DrawTrackingReqs);
+    }
 
     if (_SK_Y0_Cfg.no_fp_blur)
     { shaders.vertex.addTrackingRef (shaders.vertex.blacklist, 0xb008686a);
-      shaders.pixel.addTrackingRef  (shaders.pixel.blacklist,  0x1c599fa7); }
+      shaders.pixel.addTrackingRef  (shaders.pixel.blacklist,  0x1c599fa7);
+      InterlockedIncrement (&SK_D3D11_DrawTrackingReqs);
+    }
   }
 
   else if (! yakuza_dragon)
@@ -1056,9 +1062,67 @@ SK_Yakuza0_PlugInCfg (void)
       static bool ssao_changed = false;
 
       ImGui::BeginGroup ();
-      changed |= ImGui::Checkbox ("Disable First-Person Blur", &_SK_Y0_Cfg.no_fp_blur);
-      changed |= ImGui::Checkbox ("Disable Depth of Field",    &_SK_Y0_Cfg.no_dof);
-      changed |= ImGui::Checkbox ("Disable Ambient Occlusion", &_SK_Y0_Cfg.no_ssao);
+      if (ImGui::Checkbox ("Disable First-Person Blur", &_SK_Y0_Cfg.no_fp_blur))
+      {
+        changed = true;
+
+        if (_SK_Y0_Cfg.no_fp_blur)
+        { shaders.vertex.addTrackingRef (shaders.vertex.blacklist, 0xb008686a);
+          shaders.pixel.addTrackingRef  (shaders.pixel.blacklist,  0x1c599fa7);
+          InterlockedIncrement (&SK_D3D11_DrawTrackingReqs);
+        }
+        else
+        { shaders.vertex.releaseTrackingRef (shaders.vertex.blacklist, 0xb008686a);
+          shaders.pixel.releaseTrackingRef  (shaders.pixel.blacklist,  0x1c599fa7);
+          InterlockedDecrement (&SK_D3D11_DrawTrackingReqs);
+        }
+      }
+      if (ImGui::Checkbox ("Disable Depth of Field", &_SK_Y0_Cfg.no_dof))
+      {
+        changed = true;
+
+        if (_SK_Y0_Cfg.no_dof)
+        { shaders.vertex.addTrackingRef (shaders.vertex.blacklist, SK_Y0_DOF_VS_CRC32C);
+          shaders.pixel.addTrackingRef  (shaders.pixel.blacklist,  SK_Y0_DOF_PS0_CRC32C);
+          shaders.pixel.addTrackingRef  (shaders.pixel.blacklist,  SK_Y0_DOF_PS1_CRC32C);
+          InterlockedIncrement (&SK_D3D11_DrawTrackingReqs);
+        }
+        else
+        { shaders.vertex.releaseTrackingRef (shaders.vertex.blacklist, SK_Y0_DOF_VS_CRC32C);
+          shaders.pixel.releaseTrackingRef  (shaders.pixel.blacklist,  SK_Y0_DOF_PS0_CRC32C);
+          shaders.pixel.releaseTrackingRef  (shaders.pixel.blacklist,  SK_Y0_DOF_PS1_CRC32C);
+          InterlockedDecrement (&SK_D3D11_DrawTrackingReqs);
+        }
+      }
+      if (ImGui::Checkbox ("Disable Ambient Occlusion", &_SK_Y0_Cfg.no_ssao))
+      {
+        changed = true;
+
+        if (_SK_Y0_Cfg.no_ssao)
+        { shaders.vertex.addTrackingRef (shaders.vertex.blacklist, 0x97837269);
+          shaders.vertex.addTrackingRef (shaders.vertex.blacklist, 0x7cc07f78);
+          shaders.vertex.addTrackingRef (shaders.vertex.blacklist, 0xe5d4a297);
+          shaders.pixel.addTrackingRef  (shaders.vertex.blacklist, 0x4d2973a3);
+          shaders.pixel.addTrackingRef  (shaders.vertex.blacklist, 0x0ed648e1);
+          shaders.pixel.addTrackingRef  (shaders.vertex.blacklist, 0x170885b9);
+          shaders.pixel.addTrackingRef  (shaders.vertex.blacklist, 0x4d2973a3);
+          shaders.pixel.addTrackingRef  (shaders.vertex.blacklist, 0x5256777a);
+          shaders.pixel.addTrackingRef  (shaders.vertex.blacklist, 0x69b8ef91);
+          InterlockedIncrement (&SK_D3D11_DrawTrackingReqs);
+        }
+        else
+        { shaders.vertex.releaseTrackingRef (shaders.vertex.blacklist, 0x97837269);
+          shaders.vertex.releaseTrackingRef (shaders.vertex.blacklist, 0x7cc07f78);
+          shaders.vertex.releaseTrackingRef (shaders.vertex.blacklist, 0xe5d4a297);
+          shaders.pixel.releaseTrackingRef  (shaders.pixel.blacklist,  0x4d2973a3);
+          shaders.pixel.releaseTrackingRef  (shaders.pixel.blacklist,  0x0ed648e1);
+          shaders.pixel.releaseTrackingRef  (shaders.pixel.blacklist,  0x170885b9);
+          shaders.pixel.releaseTrackingRef  (shaders.pixel.blacklist,  0x4d2973a3);
+          shaders.pixel.releaseTrackingRef  (shaders.pixel.blacklist,  0x5256777a);
+          shaders.pixel.releaseTrackingRef  (shaders.pixel.blacklist,  0x69b8ef91);
+          InterlockedDecrement (&SK_D3D11_DrawTrackingReqs);
+        }
+      }
       ImGui::EndGroup   ();
       ImGui::SameLine   ();
       ImGui::BeginGroup ();
@@ -1218,12 +1282,12 @@ SK_Yakuza0_PlugInCfg (void)
         static auto& rb =
           SK_GetCurrentRenderBackend ();
 
-        if ( rb.screenshot_mgr.getRepoStats ().files > 0 )
+        if ( rb.screenshot_mgr->getRepoStats ().files > 0 )
         {
           ImGui::SameLine ();
 
           const SK_ScreenshotManager::screenshot_repository_s& repo =
-            rb.screenshot_mgr.getRepoStats (png_changed);
+            rb.screenshot_mgr->getRepoStats (png_changed);
 
           ImGui::BeginGroup ();
           ImGui::TreePush   ();
@@ -1245,7 +1309,7 @@ SK_Yakuza0_PlugInCfg (void)
             SK_ShellExecuteW (
               nullptr,
                 L"explore",
-                  rb.screenshot_mgr.getBasePath (),
+                  rb.screenshot_mgr->getBasePath (),
                   nullptr, nullptr,
                     SW_NORMAL
             );
@@ -1263,48 +1327,6 @@ SK_Yakuza0_PlugInCfg (void)
     {
       if (yakuza0)
       {
-        // SSAO
-        if (_SK_Y0_Cfg.no_ssao)
-        { shaders.vertex.addTrackingRef (shaders.vertex.blacklist, 0x97837269);
-          shaders.vertex.addTrackingRef (shaders.vertex.blacklist, 0x7cc07f78);
-          shaders.vertex.addTrackingRef (shaders.vertex.blacklist, 0xe5d4a297);
-          shaders.pixel.addTrackingRef  (shaders.vertex.blacklist, 0x4d2973a3);
-          shaders.pixel.addTrackingRef  (shaders.vertex.blacklist, 0x0ed648e1);
-          shaders.pixel.addTrackingRef  (shaders.vertex.blacklist, 0x170885b9);
-          shaders.pixel.addTrackingRef  (shaders.vertex.blacklist, 0x4d2973a3);
-          shaders.pixel.addTrackingRef  (shaders.vertex.blacklist, 0x5256777a);
-          shaders.pixel.addTrackingRef  (shaders.vertex.blacklist, 0x69b8ef91); }
-        else
-        { shaders.vertex.releaseTrackingRef (shaders.vertex.blacklist, 0x97837269);
-          shaders.vertex.releaseTrackingRef (shaders.vertex.blacklist, 0x7cc07f78);
-          shaders.vertex.releaseTrackingRef (shaders.vertex.blacklist, 0xe5d4a297);
-          shaders.pixel.releaseTrackingRef  (shaders.pixel.blacklist,  0x4d2973a3);
-          shaders.pixel.releaseTrackingRef  (shaders.pixel.blacklist,  0x0ed648e1);
-          shaders.pixel.releaseTrackingRef  (shaders.pixel.blacklist,  0x170885b9);
-          shaders.pixel.releaseTrackingRef  (shaders.pixel.blacklist,  0x4d2973a3);
-          shaders.pixel.releaseTrackingRef  (shaders.pixel.blacklist,  0x5256777a);
-          shaders.pixel.releaseTrackingRef  (shaders.pixel.blacklist,  0x69b8ef91); }
-
-        // DOF
-        if (_SK_Y0_Cfg.no_dof)
-        { shaders.vertex.addTrackingRef (shaders.vertex.blacklist, SK_Y0_DOF_VS_CRC32C);
-          shaders.pixel.addTrackingRef  (shaders.pixel.blacklist,  SK_Y0_DOF_PS0_CRC32C);
-          shaders.pixel.addTrackingRef  (shaders.pixel.blacklist,  SK_Y0_DOF_PS1_CRC32C);
-        }
-        else
-        { shaders.vertex.releaseTrackingRef (shaders.vertex.blacklist, SK_Y0_DOF_VS_CRC32C);
-          shaders.pixel.releaseTrackingRef  (shaders.pixel.blacklist,  SK_Y0_DOF_PS0_CRC32C);
-          shaders.pixel.releaseTrackingRef  (shaders.pixel.blacklist,  SK_Y0_DOF_PS1_CRC32C);
-        }
-
-        // First Person Blur
-        if (_SK_Y0_Cfg.no_fp_blur)
-        { shaders.vertex.addTrackingRef (shaders.vertex.blacklist, 0xb008686a);
-          shaders.pixel.addTrackingRef  (shaders.pixel.blacklist,  0x1c599fa7); }
-        else
-        { shaders.vertex.releaseTrackingRef (shaders.vertex.blacklist, 0xb008686a);
-          shaders.pixel.releaseTrackingRef  (shaders.pixel.blacklist,  0x1c599fa7); }
-
         _SK_Y0_NoDOF->store    (_SK_Y0_Cfg.no_dof);
         _SK_Y0_NoSSAO->store   (_SK_Y0_Cfg.no_ssao);
         _SK_Y0_NoFPBlur->store (_SK_Y0_Cfg.no_fp_blur);

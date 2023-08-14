@@ -1056,7 +1056,7 @@ public:
                     std::min ( 100UL,
                       static_cast <DWORD> (
                               ( 2ULL * rb.frame_delta.getDeltaTime () ) /
-                                                   ( SK_QpcTicksPerMs )
+                                                  ( SK_PerfTicksPerMs )
                              )            );
 
                   if ( WAIT_TIMEOUT !=
@@ -2397,12 +2397,21 @@ public:
 
       if (! it.second->self_titled)
       {
-        it.second->name        = SK_Thread_GetName       (it.second->dwTid);
-        it.second->self_titled = SK_Thread_HasCustomName (it.second->dwTid);
+        auto& thread_name = SK_Thread_GetName       (it.second->dwTid);
+        auto  self_titled = SK_Thread_HasCustomName (it.second->dwTid);
+
+        if (! thread_name.empty ())
+        {
+          it.second->name        = thread_name;
+          it.second->self_titled = self_titled;
+        }
       }
 
       if (it.second->self_titled)
+      {
+        it.second->name        = SK_Thread_GetName       (it.second->dwTid); // Name may have changed
         ImGui::PushStyleColor (ImGuiCol_Text, (ImVec4&&)ImColor::HSV (0.572222f, 0.63f, 0.95f));
+      }
       else
         ImGui::PushStyleColor (ImGuiCol_Text, (ImVec4&&)ImColor::HSV (0.472222f, 0.23f, 0.91f));
 
@@ -2611,7 +2620,8 @@ public:
         it.second->runtimes.snapshot.user   = it.second->runtimes.user;
       }
 
-      LARGE_INTEGER liThreadKernel, liThreadUser;
+      LARGE_INTEGER liThreadKernel,
+                    liThreadUser;
 
       liThreadKernel.HighPart = it.second->runtimes.kernel.dwHighDateTime;
       liThreadKernel.LowPart  = it.second->runtimes.kernel.dwLowDateTime;
@@ -2768,6 +2778,9 @@ public:
       dwLastSnap = dwNow;
     }
     }
+
+    // No maximum size
+    setMaxSize (ImGui::GetIO ().DisplaySize);
   }
 
 

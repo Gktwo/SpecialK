@@ -1008,7 +1008,7 @@ ActivateWindow ( HWND hWnd,
   if (state_changed)
   {
     HWND hWndFocus =
-      GetFocus ();
+      SK_GetFocus ();
 
     if (game_window.active)
     {
@@ -1043,11 +1043,11 @@ ActivateWindow ( HWND hWnd,
     BYTE              newKeyboardState [256] = { };
     SetKeyboardState (newKeyboardState);
 
-    if (hWndFocus != game_window.hWnd && (is_game_window && (! game_window.active)))
+    if (hWndFocus != game_window.hWnd && (is_game_window && game_window.active))
     {
       BringWindowToTop    (hWndFocus);
       SetForegroundWindow (hWndFocus);
-      SetActiveWindow     (hWndFocus);
+      SK_SetActiveWindow  (hWndFocus);
     }
 
     struct {
@@ -1437,7 +1437,7 @@ bool SK_ImGui_ImplicitMouseAntiwarp (void)
   {
     // Depending on warp prefs, we may not allow the game to know about mouse movement
     //   (even if ImGui doesn't want mouse capture)
-    if ( ( SK_ImGui_Cursor.prefs.no_warp.ui_open                                      ) ||
+    if ( ( SK_ImGui_Cursor.prefs.no_warp.ui_open/* && SK_ImGui_IsMouseRelevant   ()*/ ) ||
          ( SK_ImGui_Cursor.prefs.no_warp.visible && SK_InputUtil_IsHWCursorVisible () )    )
     {
       return true;
@@ -1518,6 +1518,8 @@ SK_Input_SaveClipRect (RECT *pSave)
   {
     if (GetClipCursor (     &__SK_BackupClipRectStorage))
       __SK_BackedClipRect = &__SK_BackupClipRectStorage;
+    else
+      __SK_BackedClipRect = nullptr;
   }
 
   return __SK_BackupClipRectStorage;
@@ -1529,6 +1531,9 @@ SK_Input_RestoreClipRect (void)
   if (               __SK_BackedClipRect != nullptr &&
       SK_ClipCursor (__SK_BackedClipRect))
                      __SK_BackedClipRect = nullptr;
+  // No backing store, this means we should unrestrict the cursor
+  else
+      SK_ClipCursor (nullptr);
 
   return __SK_BackupClipRectStorage;
 }
@@ -3976,7 +3981,7 @@ BOOL
 WINAPI
 TranslateMessage_Detour (_In_ const MSG *lpMsg)
 {
-  if (SK_ImGui_WantTextCapture ())
+  if (SK_ImGui_WantTextCapture () && lpMsg != nullptr)
   {
     switch (lpMsg->message)
     {
@@ -4026,13 +4031,8 @@ SK_EarlyDispatchMessage (MSG *lpMsg, bool remove, bool peek)
                     dwMsgMax >= lpMsg->message   &&
        SK_ImGui_HandlesMessage (lpMsg, remove, peek)                       )
   {
-    if ( lpMsg->message == WM_INPUT )
-    {
-      DefWindowProcW ( lpMsg->hwnd,   lpMsg->message,
-                       lpMsg->wParam, lpMsg->lParam );
-
+    if (lpMsg->message == WM_INPUT && config.input.gamepad.hook_raw_input)
       remove = true;
-    }
 
     if (remove)
     {
@@ -4062,9 +4062,17 @@ PeekMessageA_Detour (
   _In_     UINT  wMsgFilterMax,
   _In_     UINT  wRemoveMsg )
 {
-#if _DEBUG
   SK_LOG_FIRST_CALL
-#endif
+
+  MSG msg = { };
+
+  auto _Return = [&](BOOL bRet) -> BOOL
+  {
+    if (lpMsg != nullptr)
+       *lpMsg = msg;
+
+    return bRet;
+  };
 
   auto PeekFunc = NtUserPeekMessage != nullptr ?
                   NtUserPeekMessage :
@@ -4085,58 +4093,67 @@ PeekMessageA_Detour (
 
     if (PeekFunc != nullptr)
     {
-      return
-        PeekFunc ( lpMsg,
-                        hWnd,
-                             wMsgFilterMin,
-                             wMsgFilterMax,
-                                           wRemoveMsg );
+      if ( PeekFunc ( &msg,
+                           hWnd,
+                                wMsgFilterMin,
+                                wMsgFilterMax,
+                                              wRemoveMsg )
+         )
+      {
+        return
+          _Return (TRUE);
+      }
     }
 
-    return 0;
+    return
+      _Return (FALSE);
   }
 
 
   if (config.render.dxgi.safe_fullscreen)
     wRemoveMsg |= PM_REMOVE;
 
-  if ( PeekFunc ( lpMsg,
+  if ( PeekFunc ( &msg,
                        hWnd,
                             wMsgFilterMin,
                             wMsgFilterMax,
                                           wRemoveMsg )
      )
   { // ---- RAW Input Background Hack ----
-    if (      SK_WantBackgroundRender () &&
-              lpMsg->message == WM_INPUT &&
-              lpMsg->wParam  == RIM_INPUTSINK )
+    if ( SK_WantBackgroundRender ()             &&
+            msg.message == WM_INPUT             &&
+            msg.wParam  == RIM_INPUTSINK        &&
+            config.input.gamepad.hook_raw_input &&
+            config.input.gamepad.disabled_to_game == SK_InputEnablement::Enabled )
     {
       bool keyboard = false;
       bool mouse    = false;
       bool gamepad  = false;
-
+    
       SK_Input_ClassifyRawInput (
-        reinterpret_cast <HRAWINPUT> (lpMsg->lParam),
+        reinterpret_cast <HRAWINPUT> (msg.lParam),
           mouse, keyboard, gamepad
       );
-
+    
       if (gamepad)
       {
-        lpMsg->wParam = RIM_INPUT;
-        return TRUE;
+        // Re-write the type from background to foreground
+        msg.wParam = RIM_INPUT;
       }
     } // ---- RAW Input Background Hack ----
 
     if ( (wRemoveMsg & PM_REMOVE) ==
                        PM_REMOVE )
     {
-      SK_EarlyDispatchMessage (lpMsg, true, true);
+      SK_EarlyDispatchMessage (&msg, true, true);
     }
 
-    return TRUE;
+    return
+      _Return (TRUE);
   }
 
-  return FALSE;
+  return
+    _Return (FALSE);
 }
 
 BOOL
@@ -4148,9 +4165,17 @@ PeekMessageW_Detour (
   _In_     UINT  wMsgFilterMax,
   _In_     UINT  wRemoveMsg )
 {
-#if _DEBUG
   SK_LOG_FIRST_CALL
-#endif
+
+  MSG msg = { };
+
+  auto _Return = [&](BOOL bRet) -> BOOL
+  {
+    if (lpMsg != nullptr)
+       *lpMsg = msg;
+
+    return bRet;
+  };
 
   auto PeekFunc = NtUserPeekMessage != nullptr ?
                   NtUserPeekMessage :
@@ -4172,61 +4197,84 @@ PeekMessageW_Detour (
     PeekFunc = early != nullptr ?
                early : PeekFunc;
 
-
     if (PeekFunc != nullptr)
     {
-      return
-        PeekFunc ( lpMsg,
-                        hWnd,
-                             wMsgFilterMin,
-                             wMsgFilterMax,
-                                           wRemoveMsg );
+      if ( PeekFunc ( &msg,
+                           hWnd,
+                                wMsgFilterMin,
+                                wMsgFilterMax,
+                                              wRemoveMsg )
+         )
+      {
+        return 
+          _Return (TRUE);
+      }
     }
 
-    return 0;
+    return 
+      _Return (FALSE);
   }
 
 
   if (config.render.dxgi.safe_fullscreen)
     wRemoveMsg |= PM_REMOVE;
 
-  if ( PeekFunc ( lpMsg,
+  if ( PeekFunc ( &msg,
                        hWnd,
                             wMsgFilterMin,
                             wMsgFilterMax,
                                           wRemoveMsg )
      )
   { // ---- RAW Input Background Hack ----
-    if ( SK_WantBackgroundRender () &&
-         lpMsg->message == WM_INPUT &&
-         lpMsg->wParam  == RIM_INPUTSINK )
+    if ( SK_WantBackgroundRender ()             &&
+            msg.message == WM_INPUT             &&
+            msg.wParam  == RIM_INPUTSINK        &&
+            config.input.gamepad.hook_raw_input &&
+            config.input.gamepad.disabled_to_game == SK_InputEnablement::Enabled )
     {
       bool keyboard = false;
       bool mouse    = false;
       bool gamepad  = false;
-
+    
       SK_Input_ClassifyRawInput (
-        reinterpret_cast <HRAWINPUT> (lpMsg->lParam),
+        reinterpret_cast <HRAWINPUT> (msg.lParam),
           mouse, keyboard, gamepad
       );
-
+    
       if (gamepad)
       {
-        lpMsg->wParam = RIM_INPUT;
-        return TRUE;
+        // Re-write the type from background to foreground
+        msg.wParam = RIM_INPUT;
       }
     } // ---- RAW Input Background Hack ----
 
     if ( (wRemoveMsg & PM_REMOVE) ==
                        PM_REMOVE )
     {
-      SK_EarlyDispatchMessage (lpMsg, true, true);
+      SK_EarlyDispatchMessage (&msg, true, true);
     }
 
-    return TRUE;
+    return
+      _Return (TRUE);
   }
 
-  return FALSE;
+  return
+    _Return (FALSE);
+}
+
+BOOL
+WINAPI
+SK_PeekMessageW (
+  _Out_    LPMSG lpMsg,
+  _In_opt_ HWND  hWnd,
+  _In_     UINT  wMsgFilterMin,
+  _In_     UINT  wMsgFilterMax,
+  _In_     UINT  wRemoveMsg )
+{
+  if (PeekMessageW_Original != nullptr)
+    return PeekMessageW_Original (lpMsg, hWnd, wMsgFilterMin, wMsgFilterMax, wRemoveMsg);
+
+  return PeekMessageW (lpMsg, hWnd, wMsgFilterMin, wMsgFilterMax, wRemoveMsg);
 }
 
 
@@ -4236,9 +4284,35 @@ GetMessageA_Detour (LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMin, UINT wMsgFilterM
 {
   SK_LOG_FIRST_CALL
 
+#if 1
+  DWORD dwWait = WAIT_TIMEOUT;
+  MSG      msg = { };
+
+  while (! PeekMessageW (&msg, hWnd, wMsgFilterMin, wMsgFilterMax, PM_REMOVE))
+  {
+    dwWait =
+      MsgWaitForMultipleObjectsEx ( 1, &__SK_DLL_TeardownEvent,
+                                      INFINITE, QS_ALLINPUT, 0x0 );
+
+    if (dwWait == WAIT_OBJECT_0)
+      break;
+  }
+
+  if (dwWait == WAIT_OBJECT_0 && msg.message != WM_QUIT)
+    std::memset (&msg, 0, sizeof (MSG));
+
+  if (lpMsg != nullptr)
+     *lpMsg  = msg;
+
+  return
+    ( dwWait == WAIT_OBJECT_0 ) ? -1
+                                : ( msg.message != WM_QUIT );
+#else
   auto GetFunc = NtUserGetMessage != nullptr ?
                  NtUserGetMessage :
                        GetMessageA_Original;
+
+  MSG msg = { };
 
   if ( GetFunc == nullptr )
   {
@@ -4257,32 +4331,42 @@ GetMessageA_Detour (LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMin, UINT wMsgFilterM
 
     if (GetFunc != nullptr)
     {
-      return
-        GetFunc ( lpMsg,
-                    hWnd,
-                      wMsgFilterMin,
-                      wMsgFilterMax );
+      if ( GetFunc ( &msg,
+                          hWnd,
+                               wMsgFilterMin,
+                               wMsgFilterMax )
+         )
+      {
+        if (lpMsg != nullptr)
+           *lpMsg = msg;
+
+        return TRUE;
+      }
     }
 
     return 0;
   }
 
   const BOOL bRet =
-    GetFunc ( lpMsg,
-                hWnd,
-                  wMsgFilterMin,
-                  wMsgFilterMax );
+    GetFunc ( &msg,
+                   hWnd,
+                        wMsgFilterMin,
+                        wMsgFilterMax );
 
   if ( bRet != FALSE )
   {
-    if ( SK_EarlyDispatchMessage ( lpMsg, false, false ) )
+    if ( SK_EarlyDispatchMessage ( &msg, false, false ) )
     {
-      lpMsg->message = WM_NULL;
+      msg.message = WM_NULL;
     }
   }
 
+  if (lpMsg != nullptr)
+     *lpMsg = msg;
+
   return
     bRet;
+#endif
 }
 
 BOOL
@@ -4307,13 +4391,49 @@ SK_DispatchMessageW (_In_ const MSG *lpMsg)
 
 BOOL
 WINAPI
+SK_TranslateMessage (_In_ const MSG *lpMsg)
+{
+  if (TranslateMessage_Original != nullptr)
+    return TranslateMessage_Original (lpMsg);
+
+  return TranslateMessage (lpMsg);
+}
+
+BOOL
+WINAPI
 GetMessageW_Detour (LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMin, UINT wMsgFilterMax)
 {
   SK_LOG_FIRST_CALL
 
+#if 1
+  DWORD dwWait = WAIT_TIMEOUT;
+  MSG      msg = { };
+
+  while (! PeekMessageW (&msg, hWnd, wMsgFilterMin, wMsgFilterMax, PM_REMOVE))
+  {
+    dwWait =
+      MsgWaitForMultipleObjectsEx ( 1, &__SK_DLL_TeardownEvent,
+                                      INFINITE, QS_ALLINPUT, 0x0 );
+
+    if (dwWait == WAIT_OBJECT_0)
+      break;
+  }
+
+  if (dwWait == WAIT_OBJECT_0 && msg.message != WM_QUIT)
+    std::memset (&msg, 0, sizeof (MSG));
+
+  if (lpMsg != nullptr)
+     *lpMsg  = msg;
+
+  return
+    ( dwWait == WAIT_OBJECT_0 ) ? -1
+                                : ( msg.message != WM_QUIT );
+#else
   auto GetFunc = NtUserGetMessage != nullptr ?
                  NtUserGetMessage :
                        GetMessageW_Original;
+
+  MSG msg = { };
 
   if ( GetFunc == nullptr )
   {
@@ -4332,33 +4452,42 @@ GetMessageW_Detour (LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMin, UINT wMsgFilterM
 
     if (GetFunc != nullptr)
     {
-      return
-        GetFunc ( lpMsg,
-                    hWnd,
-                      wMsgFilterMin,
-                      wMsgFilterMax );
+      if ( GetFunc ( &msg,
+                          hWnd,
+                               wMsgFilterMin,
+                               wMsgFilterMax )
+         )
+      {
+        if (lpMsg != nullptr)
+           *lpMsg = msg;
+
+        return TRUE;
+      }
     }
 
     return 0;
   }
 
   const BOOL bRet =
-    GetFunc ( lpMsg,
-                hWnd,
-                  wMsgFilterMin,
-                  wMsgFilterMax );
+    GetFunc ( &msg,
+                   hWnd,
+                        wMsgFilterMin,
+                        wMsgFilterMax );
 
-  if ( bRet )
+  if ( bRet != FALSE )
   {
-    if ( SK_EarlyDispatchMessage ( lpMsg, false, false ) )
+    if ( SK_EarlyDispatchMessage ( &msg, false, false ) )
     {
-
-      lpMsg->message = WM_NULL;
+      msg.message = WM_NULL;
     }
   }
 
+  if (lpMsg != nullptr)
+     *lpMsg = msg;
+
   return
     bRet;
+#endif
 }
 
 
@@ -4368,20 +4497,23 @@ DispatchMessageA_Detour (_In_ const MSG* lpMsg)
 {
   SK_LOG_FIRST_CALL
 
-  MSG orig_msg = *lpMsg; //-V821
-  MSG      msg = *lpMsg;
-
-  if ( SK_EarlyDispatchMessage ( &msg, true ) )
+  if (lpMsg != nullptr)
   {
-    auto DefWindowProc = DefWindowProcA;
+    MSG orig_msg = *lpMsg,
+             msg = *lpMsg;
 
-    return
-      DefWindowProc ( orig_msg.hwnd,   orig_msg.message,
-                      orig_msg.wParam, orig_msg.lParam  );
+    if ( SK_EarlyDispatchMessage ( &msg, true ) )
+    {
+      auto DefWindowProc = DefWindowProcA;
+
+      return
+        DefWindowProc ( orig_msg.hwnd,   orig_msg.message,
+                        orig_msg.wParam, orig_msg.lParam  );
+    }
   }
 
   return
-    DispatchMessageA_Original (&msg);
+    DispatchMessageA_Original (lpMsg);
 }
 
 LRESULT
@@ -4390,20 +4522,23 @@ DispatchMessageW_Detour (_In_ const MSG* lpMsg)
 {
   SK_LOG_FIRST_CALL
 
-  MSG orig_msg = *lpMsg; //-V821
-  MSG      msg = *lpMsg;
-
-  if ( SK_EarlyDispatchMessage ( &msg, true ) )
+  if (lpMsg != nullptr)
   {
-    auto DefWindowProc = DefWindowProcW;
+    MSG orig_msg = *lpMsg,
+             msg = *lpMsg;
 
-    return
-      DefWindowProc ( orig_msg.hwnd,   orig_msg.message,
-                      orig_msg.wParam, orig_msg.lParam  );
+    if ( SK_EarlyDispatchMessage ( &msg, true ) )
+    {
+      auto DefWindowProc = DefWindowProcW;
+
+      return
+        DefWindowProc ( orig_msg.hwnd,   orig_msg.message,
+                        orig_msg.wParam, orig_msg.lParam  );
+    }
   }
 
   return
-    DispatchMessageW_Original (&msg);
+    DispatchMessageW_Original (lpMsg);
 }
 
 
@@ -4615,6 +4750,61 @@ GetForegroundWindow_Detour (void)
     SK_GetForegroundWindow ();
 }
 
+typedef BOOL (WINAPI *BringWindowToTop_pfn)(HWND);
+                      BringWindowToTop_pfn
+                      BringWindowToTop_Original = nullptr;
+
+BOOL
+WINAPI
+BringWindowToTop_Detour (HWND hWnd)
+{
+  SK_LOG_FIRST_CALL;
+
+  // This breaks alt-tab and window activation in some cases
+#if 0
+  DWORD                            dwPid = 0x0;
+  GetWindowThreadProcessId (hWnd, &dwPid);
+
+  if (GetCurrentProcessId () == dwPid)
+  {
+    return
+      BringWindowToTop_Original (hWnd);
+  }
+
+  return FALSE;
+#else
+  return
+    BringWindowToTop_Original (hWnd);
+#endif
+}
+
+typedef BOOL (WINAPI *SetForegroundWindow_pfn)(HWND);
+                      SetForegroundWindow_pfn
+                      SetForegroundWindow_Original = nullptr;
+
+BOOL
+WINAPI
+SetForegroundWindow_Detour (HWND hWnd)
+{
+  SK_LOG_FIRST_CALL;
+
+  // This breaks alt-tab and window activation in some cases
+#if 0
+  DWORD                            dwPid = 0x0;
+  GetWindowThreadProcessId (hWnd, &dwPid);
+
+  if (GetCurrentProcessId () == dwPid)
+  {
+    return
+      SetForegroundWindow_Original (hWnd);
+  }
+
+  return FALSE;
+#else
+  return
+    SetForegroundWindow_Original (hWnd);
+#endif
+}
 
 void
 RealizeForegroundWindow_Impl (HWND hWndForeground)
@@ -4985,28 +5175,28 @@ SK_DetourWindowProc ( _In_  HWND   hWnd,
       rb.queueUpdateOutputs ();
     }
 
-    if (! SK_IsGameWindowActive ())//game_window.active)
-    {
-      // Using a static kinda prevents us from supporting multiple windows,
-      //   but it's good enough for now.
-      static ULONG64 ulLastReset = 0;
-
-      if (ulLastReset < SK_GetFramesDrawn () - 2)
-      {
-        auto *pLimiter =             rb.swapchain.p != nullptr
-        ? SK::Framerate::GetLimiter (rb.swapchain.p) : nullptr;
-
-        if (pLimiter != nullptr)
-        {
-          // Since this may have been the result of an output device change,
-          //   it is best to take this opportunity to re-sync the limiter's
-          //     clock versus VBLANK and flush the render queue.
-          pLimiter->reset (true);
-
-          ulLastReset = SK_GetFramesDrawn ();
-        }
-      }
-    }
+    ////if (! SK_IsGameWindowActive ())
+    ////{
+    ////  // Using a static kinda prevents us from supporting multiple windows,
+    ////  //   but it's good enough for now.
+    ////  static ULONG64 ulLastReset = 0;
+    ////
+    ////  if (ulLastReset < SK_GetFramesDrawn () - 2)
+    ////  {
+    ////    auto *pLimiter =             rb.swapchain.p != nullptr
+    ////    ? SK::Framerate::GetLimiter (rb.swapchain.p) : nullptr;
+    ////
+    ////    if (pLimiter != nullptr)
+    ////    {
+    ////      // Since this may have been the result of an output device change,
+    ////      //   it is best to take this opportunity to re-sync the limiter's
+    ////      //     clock versus VBLANK and flush the render queue.
+    ////      pLimiter->reset (true);
+    ////
+    ////      ulLastReset = SK_GetFramesDrawn ();
+    ////    }
+    ////  }
+    ////}
   }
 
 
@@ -5121,8 +5311,19 @@ SK_DetourWindowProc ( _In_  HWND   hWnd,
       }
     } break;
 
+    case WM_MOUSELEAVE:
+    {
+      //if (hWnd == game_window.hWnd || hWnd == game_window.child)
+      {
+        if (ImGui_WndProcHandler (hWnd, uMsg, wParam, lParam) != 0)
+        {
+          return 0;
+        }
+      }
+    } break;
+
     case WM_MOUSEMOVE:
-      if (hWnd == game_window.hWnd || hWnd == game_window.child)
+      //if (hWnd == game_window.hWnd || hWnd == game_window.child)
       {
         if (ImGui_WndProcHandler (hWnd, uMsg, wParam, lParam) != 0)
         {
@@ -5238,12 +5439,22 @@ SK_DetourWindowProc ( _In_  HWND   hWnd,
         game_window.hWnd   =    0;
         game_window.active = true; // The headless chicken appears very active...
 
-        SK_Win32_DestroyBackgroundWindow ();
+        if (GetAncestor (hWnd, GA_ROOT) == game_window.hWnd)
+        {
+          SK_Win32_DestroyBackgroundWindow ();
 
-        extern void SK_Inject_SetFocusWindow (HWND hWndFocus);
-                    SK_Inject_SetFocusWindow (0);
+          extern void SK_Inject_SetFocusWindow (HWND hWndFocus);
+                      SK_Inject_SetFocusWindow (0);
 
-        SK_ImGui_WantExit = true;
+          SK_ImGui_WantExit = true;
+
+          // Even if we don't exit SK in response to this message, resetting
+          //   temporary display mode changes would be a good idea.
+          rb.resetTemporaryDisplayChanges ();
+
+          if (config.compatibility.shutdown_on_window_close)
+            SK_SelfDestruct ();
+        }
       }
       break;
 
@@ -6117,6 +6328,9 @@ SK_Win32_IsDummyWindowClass (WNDCLASSEXW* pWindowClass)
     // F' it, there's a pattern here, just ignore all dummies.
     StrStrIW (pWindowClass->lpszClassName, L"dummy");
 
+  if (StrStrIW (pWindowClass->lpszClassName, L"Qt"))
+    return false;
+
   return
     dummy_window;
 }
@@ -6185,7 +6399,8 @@ SK_InstallWindowHook (HWND hWnd)
   }
 
 
-  SK_ReleaseAssert (game_window.hWnd == 0 || game_window.hWnd == GetAncestor (hWnd, GA_ROOT));
+  if (config.system.log_level > 0)
+    SK_ReleaseAssert (game_window.hWnd == 0 || game_window.hWnd == GetAncestor (hWnd, GA_ROOT));
 
 
   if (SK_IsAddressExecutable (game_window.WndProc_Original, true))
@@ -6197,19 +6412,6 @@ SK_InstallWindowHook (HWND hWnd)
   static volatile LONG               __installed =      FALSE;
   if (! InterlockedCompareExchange (&__installed, TRUE, FALSE))
   {
-    // Win32u is faster on systems that dispatch system calls through it
-    //
-    static sk_import_test_s win32u_test [] = { { "win32u.dll", false } };
-    static bool             tested         =                   false;
-
-    if (! tested)
-    {
-      SK_TestImports (hModUser32, win32u_test,
-                          sizeof (win32u_test) /
-                          sizeof (sk_import_test_s));
-      tested = true;
-    }
-
     GetThreadDpiAwarenessContext = (GetThreadDpiAwarenessContext_pfn)
       SK_GetProcAddress ( hModUser32,
                          "GetThreadDpiAwarenessContext" );
@@ -6223,7 +6425,7 @@ SK_InstallWindowHook (HWND hWnd)
     SK_CreateDLLHook2 ( L"user32", "GetSystemDpiForProcess",        GetSystemDpiForProcess_Detour,        static_cast_p2p <void> (&GetSystemDpiForProcess_Original)        );
     SK_CreateDLLHook2 ( L"user32", "GetSystemMetricsForDpi",        GetSystemMetricsForDpi_Detour,        static_cast_p2p <void> (&GetSystemMetricsForDpi_Original)        );
     SK_CreateDLLHook2 ( L"user32", "AdjustWindowRectExForDpi",      AdjustWindowRectExForDpi_Detour,      static_cast_p2p <void> (&AdjustWindowRectExForDpi_Original)      );
-    SK_CreateDLLHook2 ( L"user32", "EnableNonClientDpiScaling",     EnableNonClientDpiScaling_Detour,     static_cast_p2p <void> (&EnableNonClientDpiScaling_Original)     );
+  //SK_CreateDLLHook2 ( L"user32", "EnableNonClientDpiScaling",     EnableNonClientDpiScaling_Detour,     static_cast_p2p <void> (&EnableNonClientDpiScaling_Original)     );
     SK_CreateDLLHook2 ( L"user32", "SystemParametersInfoForDpi",    SystemParametersInfoForDpi_Detour,    static_cast_p2p <void> (&SystemParametersInfoForDpi_Original)    );
     SK_CreateDLLHook2 ( L"user32", "SetThreadDpiHostingBehavior",   SetThreadDpiHostingBehavior_Detour,   static_cast_p2p <void> (&SetThreadDpiHostingBehavior_Original)   );
     SK_CreateDLLHook2 ( L"user32", "SetThreadDpiAwarenessContext",  SetThreadDpiAwarenessContext_Detour,  static_cast_p2p <void> (&SetThreadDpiAwarenessContext_Original)  );
@@ -6765,6 +6967,16 @@ SK_HookWinAPI (void)
        static_cast_p2p <void> (&GetForegroundWindow_Original) );
 
     SK_CreateDLLHook2 (       L"user32",
+                               "SetForegroundWindow",
+                                SetForegroundWindow_Detour,
+       static_cast_p2p <void> (&SetForegroundWindow_Original) );
+
+    SK_CreateDLLHook2 (       L"user32",
+                               "BringWindowToTop",
+                                BringWindowToTop_Detour,
+       static_cast_p2p <void> (&BringWindowToTop_Original) );
+
+    SK_CreateDLLHook2 (       L"user32",
                                "GetActiveWindow",
                                 GetActiveWindow_Detour,
        static_cast_p2p <void> (&GetActiveWindow_Original) );
@@ -7063,11 +7275,21 @@ BOOL
 WINAPI
 SK_SetCursorPos (int X, int Y)
 {
-  if (SetCursorPos_Original != nullptr)
-    return SetCursorPos_Original (X, Y);
+  BOOL bRet = FALSE;
 
-  return
-    SetCursorPos (X, Y);
+  if (SetCursorPos_Original != nullptr)
+    bRet = SetCursorPos_Original (X, Y);
+
+  else
+    bRet = SetCursorPos (X, Y);
+
+  if (bRet)
+  {
+    SK_ImGui_Cursor.pos = { X, Y };
+    SK_ImGui_Cursor.ScreenToLocal (&SK_ImGui_Cursor.pos);
+  }
+
+  return bRet;
 }
 
 UINT
@@ -7287,11 +7509,11 @@ SK_Win32_CreateBackgroundWindow (void)
       if ( WAIT_OBJECT_0 ==
              MsgWaitForMultipleObjects (0, nullptr, FALSE, 250UL, QS_ALLINPUT) )
       {
-        MSG                   msg = { };
-        while (PeekMessageW (&msg, nullptr, 0, 0, PM_REMOVE) != 0)
+        MSG                      msg = { };
+        while (SK_PeekMessageW (&msg, nullptr, 0, 0, PM_REMOVE) != 0)
         {
-          TranslateMessage (&msg);
-          DispatchMessageW (&msg);
+          SK_TranslateMessage (&msg);
+          SK_DispatchMessageW (&msg);
         }
       }
 
@@ -7388,10 +7610,10 @@ bool SK_Window_OnFocusChange (HWND hWndNewTarget, HWND hWndOld)
               RECT                  rcWindow = { };
               GetWindowRect (hWnd, &rcWindow);
 
-              POINT pt;
-
-              pt.x = rcWindow.left + (rcWindow.right  - rcWindow.left) / 2;
-              pt.y = rcWindow.top  + (rcWindow.bottom - rcWindow.top)  / 2;
+              POINT pt = {
+                rcWindow.left + (rcWindow.right  - rcWindow.left) / 2,
+                rcWindow.top  + (rcWindow.bottom - rcWindow.top)  / 2
+              };
 
               if (MonitorFromPoint (pt, MONITOR_DEFAULTTONEAREST) == hMonitorGame)
               //if (MonitorFromWindow (hWnd, MONITOR_DEFAULTTONEAREST) == hMonitorGame)

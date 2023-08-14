@@ -209,7 +209,7 @@ SK_Thread_SpinUntilFlagged ( _In_ _Interlocked_operand_ LONG volatile const *pFl
   while (ReadAcquire (pFlag) == 0)
   {
     for (int i = 0; i < _SpinMax && (ReadAcquire (pFlag) == 0); i++)
-      ;
+      YieldProcessor ();
 
     if (ReadAcquire (pFlag) == 1)
       break;
@@ -227,7 +227,7 @@ SK_Thread_SpinUntilAtomicMin ( _In_ _Interlocked_operand_ LONG volatile const *p
   while (ReadAcquire (pVar) < count)
   {
     for (int i = 0; i < _SpinMax && (ReadAcquire (pVar) < count); i++)
-      ;
+      YieldProcessor ();
 
     if (ReadAcquire (pVar) >= count)
       break;
@@ -309,6 +309,7 @@ SK_AvRevertMmThreadCharacteristics (
 );
 
 extern DWORD SK_GetRenderThreadID (void);
+extern DWORD SK_GetMainThreadID   (void);
 
 extern volatile LONG __SK_MMCS_PendingChanges;
 
